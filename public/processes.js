@@ -167,28 +167,40 @@ principals.forEach((person) => {
 // Hidden until the Thoughts button shows them; hover any light to read it.
 const tip = document.getElementById('tip');
 const NOTE = { thought: ['Thought', '#c9d4ff', 0], author: ['Author record', '#ffd49a', 1], draw: ['Draw', '#ffffff', 2], world: ['World stage', '#b9aefc', 3], reference: ['Model reference', '#8fe3c9', 4], director: ['Director', '#ffb3c7', 2], review: ['Review', '#ffe08a', 1], passage: ['Prose', '#fff0d0', 5] };
-const hoverable = []; const notes = []; const mind = new THREE.Group(); mind.visible = false;
+const hoverable = []; const notes = []; const mind = new THREE.Group(); mind.visible = !params.has('nothoughts'); scene.add(mind);
 {
   const graphNodes = data.graph.nodes.filter((n) => n.category !== 'root'); const place = new Map();
   const neighbours = new Map(); const moments = new Map();
   for (const edge of data.graph.edges) {
     if (edge.target.node) { for (const [a, b] of [[edge.source, edge.target.node], [edge.target.node, edge.source]]) { if (!neighbours.has(a)) neighbours.set(a, []); neighbours.get(a).push(b); } }
-    const event = byId.get(edge.target.event); if (event && Number.isFinite(event.start)) { if (!moments.has(edge.source)) moments.set(edge.source, []); moments.get(edge.source).push(event.start); }
+    const event = byId.get(edge.target.event); if (event && Number.isFinite(event.start)) { if (!moments.has(edge.source)) moments.set(edge.source, []); moments.get(edge.source).push(event); }
   }
   const layer = (node) => NOTE[node.category]?.[2] ?? 2;
   const back = (node, x) => new THREE.Vector3(x, AMP + 8 + layer(node) * 1.6, zBack - 9 - layer(node) * 2.2);
-  for (const node of graphNodes) { const ts = (moments.get(node.id) ?? []).filter((t) => t >= T0 - 0.3 && t <= T1).sort((a, b) => a - b); if (ts.length) place.set(node.id, back(node, xOf(ts[Math.floor(ts.length / 2)]))); }
+  for (const node of graphNodes) { const ts = (moments.get(node.id) ?? []).map((e) => e.start).filter((t) => t >= T0 - 0.3 && t <= T1).sort((a, b) => a - b); if (ts.length) place.set(node.id, back(node, xOf(ts[Math.floor(ts.length / 2)]))); }
   for (let pass = 0; pass < 4; pass += 1) for (const node of graphNodes) {
     if (place.has(node.id)) continue; const near = (neighbours.get(node.id) ?? []).map((id) => place.get(id)).filter(Boolean);
     if (near.length) place.set(node.id, back(node, near.reduce((sum, p) => sum + p.x, 0) / near.length + ((node.id.length % 7) - 3) * 0.9));
   }
   const rest = graphNodes.filter((node) => !place.has(node.id)).sort((a, b) => String(a.born?.at ?? '').localeCompare(String(b.born?.at ?? '')));
   rest.forEach((node, i) => place.set(node.id, back(node, -LENGTH / 2 + ((i + 0.5) / rest.length) * LENGTH)));
+  const groupRows = (group) => rows.filter((row) => row.group === group);
+  const meet = (event) => {
+    const t = Math.max(T0, Math.min(T1, event.start)); const touched = (event.processIds ?? []).map((id) => rowOf.get(id)).filter(Boolean);
+    if (touched.length) return touched.map((row) => new THREE.Vector3(xOf(t), row.height(t) + 0.05, row.z));
+    const person = principals.find((p) => event.participants?.includes(p.id)); const group = groups.find((g) => g.id === person?.id); if (!group) return [];
+    const own = groupRows(group); return [new THREE.Vector3(xOf(t), 0.1, own[Math.floor(own.length / 2)].z)];
+  };
   for (const node of graphNodes) {
     const [kind, color] = NOTE[node.category] ?? ['Note', '#dddddd'];
     const light = spark(color, node.category === 'passage' ? 2.6 : 2.0); light.position.copy(place.get(node.id));
     light.userData = { hover: { kind, title: node.title, text: node.text, about: [...new Set((data.graph.edges.filter((e) => e.source === node.id && e.target.event).map((e) => byId.get(e.target.event)?.label).filter(Boolean)))] } };
     mind.add(light); notes.push(light); hoverable.push(light);
+    // Threads down to where the moments it is about meet the processes.
+    light.userData.links = [];
+    for (const event of (moments.get(node.id) ?? []).filter((e) => e.start >= T0 - 0.3 && e.start <= T1)) for (const point of meet(event)) {
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([light.position.clone(), point]), additive(color, 0.13)); mind.add(line); light.userData.links.push(line);
+    }
   }
   const seen = new Set();
   for (const edge of data.graph.edges) {
@@ -232,6 +244,7 @@ document.getElementById('legend').innerHTML = '<div class="key-head">How to read
   + keyRow('<svg width="14" height="14"><path d="M7 1 L13 7 L7 13 L1 7Z" fill="#fff"/></svg>', 'A diamond is a decision the model drew from its weights')
   + keyRow('<svg width="28" height="8"><rect width="15" height="8" rx="3" fill="#ffb057"/><rect x="15" width="10" height="8" fill="#58b4ff"/></svg>', 'How much of an act comes from love and how much from fear')
   + keyRow('<svg width="28" height="12"><path d="M1 11 Q14 -4 27 11" stroke="#ff8a4c" stroke-width="2" fill="none"/></svg>', 'An arc is a causal link: causes, enables, fulfils a forecast')
+  + keyRow('<svg width="16" height="16"><circle cx="8" cy="8" r="4" fill="#c9d4ff"/><circle cx="8" cy="8" r="7.5" fill="none" stroke="#c9d4ff" stroke-opacity="0.35"/></svg>', `Thoughts shows the agent's ${notes.length} notes and passages behind the processes; hover one, or an event's spark, to read it`)
   + `<div class="key-row" style="gap:12px;flex-wrap:wrap">${groups.map((g) => `<span style="display:inline-flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:50%;background:${g.hue};display:inline-block"></i>${g.label}</span>`).join('')}</div>`;
 
 // ---- the story, as the tool renders it from the graph ------------------------------------------------------------------------
@@ -250,6 +263,10 @@ document.getElementById('reader-close').addEventListener('click', () => { docume
 addEventListener('keydown', (event) => { if (event.key === 'Escape') document.getElementById('reader').hidden = true; });
 if (params.has('read')) document.getElementById('read').click();
 
+
+const thoughtsButton = document.getElementById('thoughts');
+const showThoughts = (on) => { mind.visible = on; thoughtsButton.classList.toggle('on', on); thoughtsButton.textContent = on ? 'Hide thoughts' : 'Thoughts'; if (!on) tip.hidden = true; };
+thoughtsButton.addEventListener('click', () => showThoughts(!mind.visible)); showThoughts(mind.visible);
 
 // ---- time -----------------------------------------------------------------------------------------------------------------
 let now = T1; let playing = false;
@@ -295,7 +312,7 @@ function declutter() {
     const free = !hits(r); tag.element.style.opacity = free ? '' : '0'; if (free) placed.push(r);
   }
 }
-let pointerAt = null;
+let pointerAt = null; let lit = null;
 renderer.domElement.addEventListener('pointermove', (event) => { pointerAt = { x: event.clientX, y: event.clientY }; });
 renderer.domElement.addEventListener('pointerleave', () => { pointerAt = null; tip.hidden = true; });
 function hover() {
@@ -308,7 +325,8 @@ function hover() {
     const dx = (at.x + 1) / 2 * innerWidth - pointerAt.x; const dy = (1 - at.y) / 2 * innerHeight - pointerAt.y; const d = dx * dx + dy * dy;
     if (d < best) { best = d; hit = item; }
   }
-  if (!hit) { tip.hidden = true; renderer.domElement.style.cursor = ''; return; }
+  if (!hit) { tip.hidden = true; renderer.domElement.style.cursor = ''; for (const line of lit?.userData.links ?? []) line.material.opacity = 0.13; lit = null; return; }
+  if (lit !== hit) { for (const line of lit?.userData.links ?? []) line.material.opacity = 0.13; for (const line of hit.userData.links ?? []) line.material.opacity = 0.95; lit = hit; }
   const info = hit.userData.hover; renderer.domElement.style.cursor = 'help';
   tip.replaceChildren();
   const kind = document.createElement('div'); kind.className = 'k'; kind.textContent = info.kind; tip.append(kind);
