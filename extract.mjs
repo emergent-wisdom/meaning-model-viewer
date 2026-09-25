@@ -51,7 +51,7 @@ if (flag('--run')) {
   if (!head) throw new Error('No story graph has been written in this run yet.');
   // A consistent snapshot of the live database, opened by a private engine: the run's own server is never called.
   const snapshot = join(tmpdir(), `meaning-model-viz-${process.pid}.sqlite`);
-  execFileSync('sqlite3', [join(novel, 'engine-state.sqlite'), `.backup '${snapshot}'`]);
+  { const { DatabaseSync, backup } = await import('node:sqlite'); const source = new DatabaseSync(join(novel, 'engine-state.sqlite'), { readOnly: true }); await backup(source, snapshot); source.close(); }
   process.env.LIFE_SIM_STATE_FILE = snapshot;
   process.env.LIFE_SIM_ENGINE_BIN = ENGINE;
   const { LifeSimulationService } = await import(`${PUBLISH}/mcp-server/src/service.mjs`);

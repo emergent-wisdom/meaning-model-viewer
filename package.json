@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "A 3D landscape of a story as an agent builds it with the Meaning Model: every function over time, the understanding above, the construction replayed.",
   "scripts": {
-    "serve": "python3 -m http.server 8765 --directory public",
+    "serve": "node serve.mjs",
     "extract": "node extract.mjs"
   },
   "license": "MIT",
