@@ -268,6 +268,12 @@ const thoughtsButton = document.getElementById('thoughts');
 const showThoughts = (on) => { mind.visible = on; thoughtsButton.classList.toggle('on', on); thoughtsButton.textContent = on ? 'Hide thoughts' : 'Thoughts'; if (!on) tip.hidden = true; };
 thoughtsButton.addEventListener('click', () => showThoughts(!mind.visible)); showThoughts(mind.visible);
 
+const qrPanel = document.getElementById('qr-panel');
+document.getElementById('qr').addEventListener('click', () => { qrPanel.hidden = !qrPanel.hidden; });
+qrPanel.addEventListener('click', () => { qrPanel.hidden = true; });
+addEventListener('keydown', (event) => { if (event.key === 'Escape') qrPanel.hidden = true; });
+if (params.has('qr')) qrPanel.hidden = false;
+
 // ---- time -----------------------------------------------------------------------------------------------------------------
 let now = T1; let playing = false;
 const month = (t) => new Date(Date.UTC(Math.floor(t), Math.floor((t % 1) * 12), 1)).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });

@@ -14,5 +14,8 @@
   "dependencies": {
     "@emergent-wisdom/meaning-model-mcp": "^0.3.0",
     "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "qrcode": "^1.5.4"
   }
 }
