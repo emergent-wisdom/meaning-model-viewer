@@ -283,9 +283,11 @@ if (!title && titled) { try { const data = JSON.parse(titled.text).data; title =
 // ---- the story's text, from the render ------------------------------------------------------------------------------------------
 const story = rendered && !rendered.error ? { projectionHash: rendered.projection_hash ?? null,
   units: (rendered.units ?? []).map((unit) => ({ id: unit.node_id, type: unit.node_type ?? null, role: unit.role ?? null, title: unit.title ?? null, text: String(unit.text ?? ''), born: nodeBorn.get(unit.node_id) ?? null })) } : null;
+const storyTitle = story?.units.map((unit) => unit.text.match(/^#\s+(.+)$/m)?.[1]?.trim()).find(Boolean) ?? null;
 const storyWords = story ? story.units.reduce((sum, unit) => sum + unit.text.split('\n').filter((line) => !/^\s*#/.test(line)).join(' ').split(/\s+/).filter(Boolean).length, 0) : null;
 const data = {
-  schema: 'meaning-model-stage-view/v1', generatedAt: new Date().toISOString(), run: runName, title: title ?? runName,
+  // The story's own title, from its document in the graph; else the chosen world's.
+  schema: 'meaning-model-stage-view/v1', generatedAt: new Date().toISOString(), run: runName, title: flag('--title') ?? storyTitle ?? title ?? runName,
   timeUnit: unit, firstCall, lastCall: calls.at(-1)?.at ?? null, headGraphHash: history.headGraphHash ?? null, modelHash: boundModel,
   window, extent, people, events, relations, draws,
   graph: { nodes: graphNodes, edges: graphEdges }, story, steps, toolCalls,
