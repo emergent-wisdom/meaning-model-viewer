@@ -4,3 +4,4 @@ live.log
 # Datasets from private runs stay local; the published story's data is committed.
 public/data/*.json
 !public/data/rabbit-hole.json
+renders/

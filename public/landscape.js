@@ -11,11 +11,13 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const params = new URLSearchParams(location.search);
-const dataName = params.get('data') ?? 'crossing-season';
+const dataName = params.get('data') ?? 'rabbit-hole';
 const HUES = ['#3987e5', '#d95926', '#199e70'];
 const WORLD = '#9085e9';
 const NX = 420; const LENGTH = 96; const AMP = 8.5; const ROW = 2.1; const GAP = 4.2;
 const clip = (text, n) => { const s = String(text ?? '').replace(/\s+/g, ' '); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
+// A ridge's name: the head of a long label, before its dates and detail, cut at a word.
+const short = (text, n = 40) => { const head = String(text ?? '').replace(/\s+/g, ' ').split(/[:;,]| from | since | built /)[0].trim(); if (head.length <= n) return head; const cut = head.slice(0, n - 1); const space = cut.lastIndexOf(' '); return `${space > n * 0.6 ? cut.slice(0, space) : cut}…`; };
 const tip = document.getElementById('tip');
 
 let data = await (await fetch(`data/${dataName}.json?ts=${Date.now()}`, { cache: 'no-store' })).json();
@@ -105,14 +107,15 @@ function buildRows() {
   const inLives = new Set(principals.flatMap((person) => (person.life ? [person.life.eventId, ...descendants(person.life.eventId)] : [])));
   const worldGroup = { id: 'world', label: 'The world', hue: WORLD };
   const span = domain[1] - domain[0];
+  // Long on the axis the page draws: on the deep-time scale a development of a few decades near the present counts.
   const tops = data.events.filter((event) => !owned.has(event.id) && !inLives.has(event.id) && Number.isFinite(event.start) && Number.isFinite(event.end)
-      && (event.end - event.start) > span * 0.04 && (event.end - event.start) < span * 3)
+      && P(event.end) - P(event.start) > 0.02 && (event.end - event.start) < span * 3)
     .map((event) => ({ event, ids: [event.id, ...descendants(event.id)] })).sort((a, b) => (b.event.end - b.event.start) - (a.event.end - a.event.start)).slice(0, 12);
   const worldRows = [];
   for (const { event, ids } of tops) {
     const inside = ids.slice(1); const samples = inside.length ? density(inside, 0.2) : new Float32Array(NX);
     for (let i = 0; i < NX; i += 1) samples[i] = Math.max(samples[i] * 0.9, 0.16 * bump(sampleT(i), event.start, event.end));
-    if (samples.some((value) => value > 0.001)) worldRows.push({ id: event.id, label: clip(event.label, 34), group: worldGroup, hue: WORLD, kind: 'world', amp: 0.6, samples, born: born(ids.map((id) => byId.get(id)?.born)) });
+    if (samples.some((value) => value > 0.001)) worldRows.push({ id: event.id, label: clip(event.label, 34), name: short(event.label), group: worldGroup, hue: WORLD, kind: 'world', amp: 0.6, samples, born: born(ids.map((id) => byId.get(id)?.born)) });
   }
   rows.unshift(...worldRows); // the world behind the lives
   // Z positions, block by block.
@@ -148,10 +151,10 @@ const world = new THREE.Group(); scene.add(world);
 function clearWorld() { for (const child of [...world.children]) { world.remove(child); child.traverse?.((node) => { node.geometry?.dispose?.(); if (node.material) [].concat(node.material).forEach((m) => m.dispose?.()); if (node.element) node.element.remove(); }); } }
 
 // Terrain: one heightfield, every row a ridge.
-let terrain; let ridges = []; let beams = []; let mindPoints = []; let rowScale = new Map();
+let terrain; let ridges = []; let beams = []; let mindPoints = []; let ridgeNames = []; let rowScale = new Map();
 const NZ_PER = 5;
 function build() {
-  clearWorld(); ridges = []; beams = []; mindPoints = [];
+  clearWorld(); ridges = []; beams = []; mindPoints = []; ridgeNames = [];
   const { rows, depth } = model;
   const zMin = -depth / 2 - ROW * 1.5; const zMax = depth / 2 + ROW * 1.5;
   const NZ = Math.max(8, Math.ceil((zMax - zMin) / ROW * NZ_PER));
@@ -183,6 +186,14 @@ function build() {
     const head = document.createElement('b'); head.textContent = `${section.zs.length > 1 ? `${section.zs.length} ` : ''}${name}`;
     const note = document.createElement('span'); note.textContent = meaning; label.append(head, note);
     const object = new CSS2DObject(label); object.position.set(LENGTH / 2 + 1.4, 0.3, (Math.min(...section.zs) + Math.max(...section.zs)) / 2); object.center.set(0, 0.5); world.add(object);
+  }
+  // A small model names each ridge where it begins; a large one leaves names to hover.
+  if (rows.length <= 14) for (const row of rows) {
+    const first = row.samples.findIndex((value) => value > 0.05); if (first < 0) continue;
+    const label = document.createElement('div'); label.className = 'label ridge-name';
+    const inner = document.createElement('span'); inner.textContent = row.name ?? row.label; label.append(inner);
+    const object = new CSS2DObject(label); object.position.set(-LENGTH / 2 + (first / (NX - 1)) * LENGTH, 1.1, row.z); object.center.set(0, 1); world.add(object);
+    ridgeNames.push({ object, inner, row, first });
   }
   // Group names.
   const groups = new Map(); for (const row of rows) { if (!groups.has(row.group.id)) groups.set(row.group.id, { ...row.group, zs: [] }); groups.get(row.group.id).zs.push(row.z); }
@@ -386,6 +397,22 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); labels.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
 
+// Names that would cover the time marks, the section notes or each other lift a little; the rest wait for hover.
+function declutter() {
+  const placed = [];
+  for (const el of labels.domElement.querySelectorAll('.label.time, .label.section, .label.group')) { const r = el.getBoundingClientRect(); if (r.width) placed.push(r); }
+  const items = [];
+  for (const item of ridgeNames) { if (!item.object.visible) continue; const r = item.object.element.getBoundingClientRect(); if (r.width) items.push([item, r]); }
+  items.sort((a, b) => b[1].bottom - a[1].bottom);
+  for (const [item, r] of items) {
+    let lift = 0;
+    const hit = () => placed.some((p) => r.left < p.right + 6 && r.right > p.left - 6 && r.top - lift < p.bottom + 1 && r.bottom - lift > p.top - 1);
+    while (lift <= 64 && hit()) lift += 3;
+    const fits = lift <= 64;
+    item.inner.style.transform = `translateY(${-lift}px)`; item.inner.style.opacity = fits ? '' : '0';
+    if (fits) placed.push({ left: r.left, right: r.right, top: r.top - lift, bottom: r.bottom - lift });
+  }
+}
 build(); for (const row of model.rows) rowScale.set(row.id, 1); updateTerrain(true); applyTau();
 let clock = 0;
 function frame() {
@@ -394,7 +421,8 @@ function frame() {
   for (const row of model.rows) { const now = rowScale.get(row.id) ?? 0; const target = row.target ?? 1; if (Math.abs(now - target) > 0.002) { rowScale.set(row.id, now + (target - now) * 0.12); moving = true; } }
   if (moving) updateTerrain();
   for (const item of mindPoints) if (item.visible) item.position.y += Math.sin(clock * 0.8 + item.id) * 0.004;
-  controls.update(); composer.render(); labels.render(scene, camera);
+  for (const { object, row, first } of ridgeNames) { const scale = rowScale.get(row.id) ?? 0; object.visible = scale > 0.35; object.position.y = row.samples[first] * AMP * (row.amp ?? 1) * scale + 1.1; }
+  controls.update(); composer.render(); labels.render(scene, camera); declutter();
   requestAnimationFrame(frame);
 }
 frame();

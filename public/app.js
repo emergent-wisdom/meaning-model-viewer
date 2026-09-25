@@ -2,7 +2,7 @@
 // writes: the model's lives, Events and Cuts in story time, the Understanding graph, and the construction in real time.
 (async function main() {
   const params = new URLSearchParams(location.search);
-  const dataName = params.get('data') ?? 'crossing-season';
+  const dataName = params.get('data') ?? 'rabbit-hole';
   const live = params.has('live');
   const css = getComputedStyle(document.querySelector('.viz-root'));
   const token = (name) => css.getPropertyValue(name).trim();
