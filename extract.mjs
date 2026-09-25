@@ -26,7 +26,7 @@ const HASH = /\b[0-9a-f]{64}\b/g;
 const parseBody = (result) => { try { return JSON.parse(result?.content?.[0]?.text ?? 'null'); } catch { return null; } };
 
 // ---- sources -----------------------------------------------------------------------------------------------------
-let calls = []; let history = null; let staticModel = null; let staticGraph = null; let runName = null;
+let calls = []; let history = null; let staticModel = null; let staticGraph = null; let runName = null; let rendered = null;
 if (flag('--run')) {
   const run = resolve(flag('--run'));
   const novel = existsSync(join(run, 'novel')) ? join(run, 'novel') : run;
@@ -60,6 +60,8 @@ if (flag('--run')) {
   try {
     await service.initialize();
     history = await exportConstructionHistory(service, { graphHash: head, accessScopes: [...scopes].sort() });
+    // The story as a reader has it: the tool's own render of the graph's narrative nodes, in story order.
+    rendered = await service.renderNarrativeGraph({ graphHash: head, accessScopes: [...scopes].sort() }).catch((error) => ({ error: String(error?.message ?? error) }));
   } finally {
     await service.close?.();
     for (const suffix of ['', '-wal', '-shm']) rmSync(`${snapshot}${suffix}`, { force: true });
@@ -278,13 +280,17 @@ const titled = [...nodes.values()].find((node) => node.node_type === 'storytelli
 let title = flag('--title');
 if (!title && titled) { try { const data = JSON.parse(titled.text).data; title = data.candidates.find((item) => item.id === data.selection.chosenId)?.title ?? null; } catch { title = null; } }
 
+// ---- the story's text, from the render ------------------------------------------------------------------------------------------
+const story = rendered && !rendered.error ? { projectionHash: rendered.projection_hash ?? null,
+  units: (rendered.units ?? []).map((unit) => ({ id: unit.node_id, type: unit.node_type ?? null, role: unit.role ?? null, title: unit.title ?? null, text: String(unit.text ?? ''), born: nodeBorn.get(unit.node_id) ?? null })) } : null;
+const storyWords = story ? story.units.reduce((sum, unit) => sum + unit.text.split('\n').filter((line) => !/^\s*#/.test(line)).join(' ').split(/\s+/).filter(Boolean).length, 0) : null;
 const data = {
   schema: 'meaning-model-stage-view/v1', generatedAt: new Date().toISOString(), run: runName, title: title ?? runName,
   timeUnit: unit, firstCall, lastCall: calls.at(-1)?.at ?? null, headGraphHash: history.headGraphHash ?? null, modelHash: boundModel,
   window, extent, people, events, relations, draws,
-  graph: { nodes: graphNodes, edges: graphEdges }, steps, toolCalls,
+  graph: { nodes: graphNodes, edges: graphEdges }, story, steps, toolCalls,
   totals: { events: events.length, cuts: allCuts.length - withdrawn.size, people: people.length, lives: lives.length, thoughts: graphNodes.filter((node) => node.category === 'thought').length,
-    passages: graphNodes.filter((node) => node.category === 'passage').length, words: graphNodes.reduce((sum, node) => sum + node.words, 0), modelRevisions: history.models.length, graphRevisions: history.revisions.length },
+    passages: graphNodes.filter((node) => node.category === 'passage').length, words: storyWords ?? graphNodes.reduce((sum, node) => sum + node.words, 0), modelRevisions: history.models.length, graphRevisions: history.revisions.length },
 };
 mkdirSync(dirname(resolve(out)), { recursive: true });
 writeFileSync(out, JSON.stringify(data));

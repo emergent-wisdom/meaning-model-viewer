@@ -354,7 +354,7 @@ function hud() {
 function applyTau() {
   for (const row of model.rows) row.target = visibleAt(Number.isFinite(row.born) ? row.born : -Infinity) ? 1 : 0;
   for (const item of [...beams, ...mindPoints]) item.visible = visibleAt(item.userData.born);
-  hud();
+  hud(); renderReader();
 }
 let timer = null;
 function stop() { playing = false; clearInterval(timer); document.getElementById('play').textContent = '▶'; }
@@ -399,6 +399,28 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); labels.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
 
+// ---- the story, as the tool renders it from the graph, up to the replay's moment ----------------------------------------------------
+let readerKey = null;
+const inline = (text) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
+function renderReader() {
+  const reader = document.getElementById('reader'); if (reader.hidden) return;
+  const bornOf = (item) => (item?.born?.at ? Date.parse(item.born.at) : -Infinity);
+  const units = (data.story?.units ?? []).filter((unit) => visibleAt(bornOf(unit)));
+  const key = `${data.lastCall}|${units.length}`; if (key === readerKey) return; readerKey = key;
+  const body = document.getElementById('reader-body'); body.replaceChildren(); let prose = 0;
+  for (const unit of units) for (const block of unit.text.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean)) {
+    const heading = block.match(/^(#{1,4})\s+([\s\S]*)$/);
+    const element = document.createElement(heading ? `h${heading[1].length}` : 'p');
+    element.innerHTML = inline(heading ? heading[2] : block).replace(/\n/g, '<br>'); body.append(element); if (!heading) prose += 1;
+  }
+  if (!prose) { const note = document.createElement('p'); note.className = 'note';
+    note.textContent = data.story ? 'No prose yet. The agent models the world, the lives and the decisions first; the text appears here as it is written.' : 'This data file holds no rendered story.'; body.append(note); }
+}
+document.getElementById('read').addEventListener('click', () => { const reader = document.getElementById('reader'); reader.hidden = !reader.hidden; readerKey = null; renderReader(); });
+document.getElementById('reader-close').addEventListener('click', () => { document.getElementById('reader').hidden = true; });
+addEventListener('keydown', (event) => { if (event.key === 'Escape') document.getElementById('reader').hidden = true; });
+
 // Section notes and ridge names that would cover the time marks or each other lift a little; the rest wait for hover.
 function declutter() {
   const placed = [];
@@ -431,6 +453,7 @@ function frame() {
 }
 frame();
 if (params.has('play')) setTimeout(play, 1200);
+if (params.has('read')) document.getElementById('read').click();
 
 // Live: rebuild when the extractor refreshes the data file.
 if (params.has('live')) setInterval(async () => {
