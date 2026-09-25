@@ -7,3 +7,4 @@ public/data/*.json
 renders/
 *.sqlite-shm
 *.sqlite-wal
+!media/*
