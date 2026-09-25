@@ -10,6 +10,7 @@
 // names its hash.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { readPath } from './measures.mjs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -208,7 +209,7 @@ const events = (mm.events ?? []).map((event) => {
     : (index.cutsByEvent.get(event.id) ?? []).some((cut) => cutKind(cut) === 'decision') ? 'decision' : 'event';
   return { id: event.id, label: clip(event.boundary ?? event.id, 90), description: clip(event.description, 360), start: toYear(start(event)), end: toYear(end(event)),
     span: span === null ? null : toYear(end(event)) - toYear(start(event)), parent: parentOf(event.id), region: event.region ?? null, participants, kind,
-    cuts: (index.cutsByEvent.get(event.id) ?? []).length, born: birthOf('events', event.id) };
+    cuts: (index.cutsByEvent.get(event.id) ?? []).length, processIds: event.process_ids ?? [], born: birthOf('events', event.id) };
 });
 const relations = (mm.event_relations ?? []).filter((relation) => relation.kind !== 'contains').map((relation) => ({
   source: relation.source_event_id, target: relation.target_event_id, kind: relation.kind,
@@ -280,6 +281,14 @@ const titled = [...nodes.values()].find((node) => node.node_type === 'storytelli
 let title = flag('--title');
 if (!title && titled) { try { const data = JSON.parse(titled.text).data; title = data.candidates.find((item) => item.id === data.selection.chosenId)?.title ?? null; } catch { title = null; } }
 
+// ---- measures: the model's named processes, each with the value path its support states ---------------------------------
+const measures = (model.processes ?? []).filter((process) => !String(process.id).startsWith('profile.')).map((process) => {
+  const support = (process.support ?? []).join(' ; ');
+  return { id: process.id, unit: process.unit ?? null, frame: process.reference_frame ?? null, role: clip(process.scale?.semantic_role, 240) || null,
+    support: clip(support, 600), points: readPath(support).map(({ t, v }) => ({ t: +t.toFixed(4), v })),
+    events: events.filter((event) => event.processIds.includes(process.id)).map((event) => event.id), born: birthOf('processes', process.id) };
+});
+
 // ---- the story's text, from the render ------------------------------------------------------------------------------------------
 const story = rendered && !rendered.error ? { projectionHash: rendered.projection_hash ?? null,
   units: (rendered.units ?? []).map((unit) => ({ id: unit.node_id, type: unit.node_type ?? null, role: unit.role ?? null, title: unit.title ?? null, text: String(unit.text ?? ''), born: nodeBorn.get(unit.node_id) ?? null })) } : null;
@@ -290,7 +299,7 @@ const data = {
   schema: 'meaning-model-stage-view/v1', generatedAt: new Date().toISOString(), run: runName, title: flag('--title') ?? storyTitle ?? title ?? runName,
   timeUnit: unit, firstCall, lastCall: calls.at(-1)?.at ?? null, headGraphHash: history.headGraphHash ?? null, modelHash: boundModel,
   window, extent, people, events, relations, draws,
-  graph: { nodes: graphNodes, edges: graphEdges }, story, steps, toolCalls,
+  graph: { nodes: graphNodes, edges: graphEdges }, story, measures, steps, toolCalls,
   totals: { events: events.length, cuts: allCuts.length - withdrawn.size, people: people.length, lives: lives.length, thoughts: graphNodes.filter((node) => node.category === 'thought').length,
     passages: graphNodes.filter((node) => node.category === 'passage').length, words: storyWords ?? graphNodes.reduce((sum, node) => sum + node.words, 0), modelRevisions: history.models.length, graphRevisions: history.revisions.length },
 };

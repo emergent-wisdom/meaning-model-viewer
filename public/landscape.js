@@ -323,7 +323,7 @@ function setCaption(raw) {
   element.append(clip(body, 420));
 }
 function hud() {
-  { const full = data.title ?? 'Story Landscape'; const m = full.match(/^(.*?)\s*(\([^)]*\))$/); const t = document.getElementById('title');
+  { const full = params.get('title') ?? data.title ?? 'Story Landscape'; const m = full.match(/^(.*?)\s*(\([^)]*\))$/); const t = document.getElementById('title');
     t.textContent = m ? m[1] : full; if (m) { const aside = document.createElement('span'); aside.className = 'aside'; aside.textContent = ` ${m[2]}`; t.append(aside); } }
   document.getElementById('sub').textContent = `${model.principals.map((person) => person.name).join(', ')}. ${model.rows.length} functions over time, each the model's own record, rising in the order the agent built them.`;
   const bornOf = (item) => (item?.born?.at ? Date.parse(item.born.at) : -Infinity);
@@ -421,7 +421,7 @@ function renderReader() {
   for (const unit of units) for (const block of unit.text.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean)) {
     const heading = block.match(/^(#{1,4})\s+([\s\S]*)$/);
     const element = document.createElement(heading ? `h${heading[1].length}` : 'p');
-    element.innerHTML = inline(heading ? heading[2] : block).replace(/\n/g, '<br>'); body.append(element); if (!heading) prose += 1;
+    element.innerHTML = inline(heading && heading[1].length === 1 && unit.role === 'document_root' && params.get('title') ? params.get('title') : heading ? heading[2] : block).replace(/\n/g, '<br>'); body.append(element); if (!heading) prose += 1;
   }
   if (!prose) { const note = document.createElement('p'); note.className = 'note';
     note.textContent = data.story ? 'No prose yet. The agent models the world, the lives and the decisions first; the text appears here as it is written.' : 'This data file holds no rendered story.'; body.append(note); }

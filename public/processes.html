@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Story Processes</title>
+<style>
+  :root { --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781; --panel: rgba(18, 18, 17, 0.74); --ring: rgba(255, 255, 255, 0.10); --love: #ffb057; --fear: #58b4ff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #050608; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); }
+  #scene { position: fixed; inset: 0; }
+  .hud { position: fixed; pointer-events: none; }
+  .title { top: 22px; left: 28px; max-width: 48vw; }
+  .eyebrow { color: var(--muted); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; }
+  h1 { margin: 4px 0 2px; font-size: 44px; font-weight: 600; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); font-size: 15px; line-height: 1.4; }
+  .repos { margin-top: 12px; display: grid; grid-template-columns: auto auto; justify-content: start; gap: 4px 12px; font-size: 14px; pointer-events: auto; }
+  .repos span { color: var(--muted); } .repos a { color: #fff; font-weight: 500; text-decoration: none; } .repos a:hover { text-decoration: underline; }
+  .stats { top: 26px; right: 30px; display: flex; gap: 26px; text-align: right; }
+  .stat .value { font-size: 34px; font-weight: 600; line-height: 1; } .stat .name { color: var(--muted); font-size: 12px; margin-top: 5px; }
+  .legend { top: 112px; right: 30px; width: 370px; display: flex; flex-direction: column; gap: 8px; color: var(--ink-2); font-size: 13px; background: var(--panel); border-radius: 12px; padding: 12px 14px; box-shadow: 0 0 0 1px var(--ring) inset; backdrop-filter: blur(8px); }
+  .key-head { color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 2px; }
+  .key-row { display: flex; align-items: center; gap: 10px; line-height: 1.3; } .key-row .glyph { flex: none; width: 30px; display: flex; justify-content: center; }
+  .caption { left: 28px; bottom: 86px; max-width: min(1000px, 62vw); background: var(--panel); border-radius: 12px; padding: 12px 16px; box-shadow: 0 0 0 1px var(--ring) inset; backdrop-filter: blur(8px); }
+  .caption .kind { color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .caption .text { font-size: 18px; line-height: 1.45; margin-top: 4px; max-height: 4.4em; overflow: hidden; }
+  .bar { left: 28px; right: 28px; bottom: 26px; height: 40px; display: flex; align-items: center; gap: 14px; pointer-events: auto; }
+  .bar button { background: #3987e5; color: #fff; border: 0; border-radius: 50%; width: 36px; height: 36px; font-size: 14px; cursor: pointer; flex: none; }
+  .track { flex: 1; height: 6px; background: rgba(255,255,255,0.10); border-radius: 3px; position: relative; cursor: pointer; }
+  .fill { position: absolute; inset: 0 auto 0 0; width: 100%; background: linear-gradient(90deg, #3987e5, #9085e9); border-radius: 3px; }
+  .clock { color: #fff; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 150px; text-align: right; }
+  .bar button.read { width: auto; height: 36px; border-radius: 18px; padding: 0 16px; background: rgba(255,255,255,0.12); font-size: 14px; font-weight: 500; }
+  .bar button.read:hover { background: rgba(255,255,255,0.2); }
+  .caption { max-width: min(760px, 46vw); }
+  .reader { position: fixed; top: 0; right: 0; bottom: 0; z-index: 6; width: min(720px, 100vw); overflow-y: auto; padding: 44px 64px 96px; background: #090a0c; box-shadow: -1px 0 0 var(--ring); color: #ecebe6; font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-size: 19px; line-height: 1.62; }
+  .reader[hidden] { display: none; }
+  .reader .close { position: sticky; top: 0; float: right; margin: -20px -40px 0 0; width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(255,255,255,0.1); color: #fff; font-size: 15px; cursor: pointer; }
+  .reader .source { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  .reader h1 { font-size: 36px; line-height: 1.15; font-weight: 600; margin: 0 0 28px; } .reader h2 { font-size: 23px; font-weight: 600; margin: 2.2em 0 0.8em; }
+  .reader p { margin: 0; text-indent: 1.5em; } .reader h1 + p, .reader h2 + p { text-indent: 0; }
+  @media (max-width: 640px) { .reader { padding: 40px 16px 80px; font-size: 17px; } .reader .close { margin: -16px 0 0 0; } }
+  .label { color: var(--ink-2); font-size: 12px; white-space: nowrap; text-shadow: 0 0 6px #000, 0 0 2px #000; }
+  .label.row { font-size: 13px; color: #e9e8e2; pointer-events: auto; cursor: default; }
+  .label.value { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .label.group { font-size: 17px; font-weight: 600; }
+  .label.year { color: var(--muted); font-size: 13px; }
+  .label.event { color: #fff; font-size: 12px; font-weight: 500; max-width: 240px; white-space: normal; line-height: 1.25; }
+  .label.lane { color: #fff; font-size: 13px; font-weight: 600; } .label.lane span { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
+  .lens-host { white-space: normal; }
+  .lens { transition: transform 0.2s; background: rgba(10, 10, 12, 0.82); border-radius: 8px; padding: 6px 8px; box-shadow: 0 0 0 1px var(--ring) inset; font-size: 11px; color: #fff; width: 168px; white-space: normal; line-height: 1.25; }
+  .lens .act { font-weight: 600; margin-bottom: 4px; }
+  .lens .split { display: flex; height: 7px; border-radius: 4px; overflow: hidden; background: #333; }
+  .lens .split i { display: block; height: 100%; } .lens .love { background: var(--love); } .lens .fear { background: var(--fear); } .lens .rest { background: #55534e; }
+  .lens .words { display: flex; justify-content: space-between; margin-top: 3px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .lens .words b { font-weight: 600; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }</script>
+</head>
+<body>
+<div id="scene"></div>
+<div class="hud title"><div class="eyebrow">The processes an agent modeled with the Meaning Model</div><h1 id="title">Story Processes</h1><div class="sub" id="sub"></div>
+  <div class="repos"><span>The story and this view</span><a href="https://github.com/emergent-wisdom/story">github.com/emergent-wisdom/story</a><span>The tool</span><a href="https://github.com/emergent-wisdom/meaning-model">github.com/emergent-wisdom/meaning-model</a></div></div>
+<div class="hud stats" id="stats"></div>
+<div class="hud legend" id="legend"></div>
+<div class="hud caption"><div class="kind" id="kind">The story</div><div class="text" id="text"></div></div>
+<div class="hud bar"><button id="play" aria-label="Play the story's years">▶</button><button id="read" class="read">Read the story</button><div class="track" id="track"><div class="fill" id="fill"></div></div><div class="clock" id="clock"></div></div>
+<aside class="reader" id="reader" hidden aria-label="The story"><button class="close" id="reader-close" aria-label="Close the story">✕</button><div class="source">The story as the Meaning Model renders it from the graph.</div><div id="reader-body"></div></aside>
+<script type="module" src="processes.js"></script>
+</body>
+</html>
