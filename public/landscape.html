@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Story Landscape</title>
+<style>
+  :root { --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781; --panel: rgba(18, 18, 17, 0.72); --ring: rgba(255, 255, 255, 0.10); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #050608; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); }
+  #scene { position: fixed; inset: 0; }
+  .hud { position: fixed; pointer-events: none; }
+  .title { top: 22px; left: 28px; max-width: 46vw; }
+  .eyebrow { color: var(--muted); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; }
+  h1 { margin: 4px 0 2px; font-size: 44px; font-weight: 600; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); font-size: 15px; line-height: 1.4; }
+  .stats { top: 26px; right: 30px; display: flex; gap: 26px; text-align: right; }
+  .stat .value { font-size: 34px; font-weight: 600; line-height: 1; }
+  .stat .name { color: var(--muted); font-size: 12px; margin-top: 5px; }
+  .caption { left: 28px; bottom: 86px; max-width: min(1100px, 70vw); background: var(--panel); border-radius: 12px; padding: 12px 16px; box-shadow: 0 0 0 1px var(--ring) inset; backdrop-filter: blur(8px); }
+  .caption .kind { color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .caption .text { font-size: 18px; line-height: 1.45; margin-top: 4px; max-height: 4.4em; overflow: hidden; }
+  .bar { left: 28px; right: 28px; bottom: 26px; height: 40px; display: flex; align-items: center; gap: 14px; pointer-events: auto; }
+  .bar button { background: #3987e5; color: #fff; border: 0; border-radius: 50%; width: 36px; height: 36px; font-size: 14px; cursor: pointer; }
+  .track { flex: 1; height: 6px; background: rgba(255,255,255,0.10); border-radius: 3px; position: relative; cursor: pointer; }
+  .fill { position: absolute; inset: 0 auto 0 0; width: 100%; background: linear-gradient(90deg, #3987e5, #9085e9); border-radius: 3px; }
+  .clock { color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 240px; text-align: right; }
+  .legend { top: 118px; right: 30px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; color: var(--ink-2); font-size: 13px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 8px; vertical-align: middle; }
+  .label { color: var(--ink-2); font-size: 11px; white-space: nowrap; text-shadow: 0 0 6px #000; }
+  .label.group { color: #fff; font-size: 16px; font-weight: 600; }
+  .label.time { color: var(--muted); font-size: 12px; }
+  .tip { position: fixed; z-index: 5; pointer-events: none; max-width: 420px; background: #1a1a19; border-radius: 8px; padding: 9px 11px; font-size: 13px; line-height: 1.4; box-shadow: 0 0 0 1px var(--ring) inset, 0 8px 28px rgba(0,0,0,0.6); }
+  .tip .v { font-weight: 600; } .tip .m { color: var(--ink-2); }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }</script>
+</head>
+<body>
+<div id="scene"></div>
+<div class="hud title"><div class="eyebrow">A world model, built by an agent with the Meaning Model</div><h1 id="title">Story Landscape</h1><div class="sub" id="sub"></div></div>
+<div class="hud stats" id="stats"></div>
+<div class="hud legend" id="legend"></div>
+<div class="hud caption"><div class="kind" id="kind">The agent</div><div class="text" id="text"></div></div>
+<div class="hud bar"><button id="play" aria-label="Replay the construction">▶</button><div class="track" id="track"><div class="fill" id="fill"></div></div><div class="clock" id="clock"></div></div>
+<div class="tip" id="tip" hidden></div>
+<script type="module" src="landscape.js"></script>
+</body>
+</html>

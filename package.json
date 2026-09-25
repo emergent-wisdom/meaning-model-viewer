@@ -1,0 +1,15 @@
+{
+  "name": "story-landscape",
+  "version": "0.1.0",
+  "description": "A 3D landscape of a story as an agent builds it with the Meaning Model: every function over time, the understanding above, the construction replayed.",
+  "scripts": {
+    "serve": "python3 -m http.server 8765 --directory public",
+    "extract": "node extract.mjs"
+  },
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "d3": "^7.9.0",
+    "three": "^0.186.1"
+  }
+}
