@@ -151,10 +151,10 @@ const world = new THREE.Group(); scene.add(world);
 function clearWorld() { for (const child of [...world.children]) { world.remove(child); child.traverse?.((node) => { node.geometry?.dispose?.(); if (node.material) [].concat(node.material).forEach((m) => m.dispose?.()); if (node.element) node.element.remove(); }); } }
 
 // Terrain: one heightfield, every row a ridge.
-let terrain; let ridges = []; let beams = []; let mindPoints = []; let ridgeNames = []; let rowScale = new Map();
+let terrain; let ridges = []; let beams = []; let mindPoints = []; let ridgeNames = []; let sectionNames = []; let rowScale = new Map();
 const NZ_PER = 5;
 function build() {
-  clearWorld(); ridges = []; beams = []; mindPoints = []; ridgeNames = [];
+  clearWorld(); ridges = []; beams = []; mindPoints = []; ridgeNames = []; sectionNames = [];
   const { rows, depth } = model;
   const zMin = -depth / 2 - ROW * 1.5; const zMax = depth / 2 + ROW * 1.5;
   const NZ = Math.max(8, Math.ceil((zMax - zMin) / ROW * NZ_PER));
@@ -183,9 +183,11 @@ function build() {
   for (const section of sections.values()) {
     const [name, meaning] = SECTION[section.kind] ?? [section.kind, ''];
     const label = document.createElement('div'); label.className = 'label section';
+    const body = document.createElement('div'); body.className = 'body';
     const head = document.createElement('b'); head.textContent = `${section.zs.length > 1 ? `${section.zs.length} ` : ''}${name}`;
-    const note = document.createElement('span'); note.textContent = meaning; label.append(head, note);
+    const note = document.createElement('span'); note.textContent = meaning; body.append(head, note); label.append(body);
     const object = new CSS2DObject(label); object.position.set(LENGTH / 2 + 1.4, 0.3, (Math.min(...section.zs) + Math.max(...section.zs)) / 2); object.center.set(0, 0.5); world.add(object);
+    sectionNames.push({ object, inner: body });
   }
   // A small model names each ridge where it begins; a large one leaves names to hover.
   if (rows.length <= 14) for (const row of rows) {
@@ -397,20 +399,22 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); labels.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
 
-// Names that would cover the time marks, the section notes or each other lift a little; the rest wait for hover.
+// Section notes and ridge names that would cover the time marks or each other lift a little; the rest wait for hover.
 function declutter() {
   const placed = [];
-  for (const el of labels.domElement.querySelectorAll('.label.time, .label.section, .label.group')) { const r = el.getBoundingClientRect(); if (r.width) placed.push(r); }
-  const items = [];
-  for (const item of ridgeNames) { if (!item.object.visible) continue; const r = item.object.element.getBoundingClientRect(); if (r.width) items.push([item, r]); }
-  items.sort((a, b) => b[1].bottom - a[1].bottom);
-  for (const [item, r] of items) {
-    let lift = 0;
-    const hit = () => placed.some((p) => r.left < p.right + 6 && r.right > p.left - 6 && r.top - lift < p.bottom + 1 && r.bottom - lift > p.top - 1);
-    while (lift <= 64 && hit()) lift += 3;
-    const fits = lift <= 64;
-    item.inner.style.transform = `translateY(${-lift}px)`; item.inner.style.opacity = fits ? '' : '0';
-    if (fits) placed.push({ left: r.left, right: r.right, top: r.top - lift, bottom: r.bottom - lift });
+  for (const el of labels.domElement.querySelectorAll('.label.time, .label.group')) { const r = el.getBoundingClientRect(); if (r.width) placed.push(r); }
+  for (const list of [sectionNames, ridgeNames]) {
+    const items = [];
+    for (const item of list) { if (!item.object.visible) continue; const r = item.object.element.getBoundingClientRect(); if (r.width) items.push([item, r]); }
+    items.sort((a, b) => b[1].bottom - a[1].bottom);
+    for (const [item, r] of items) {
+      let lift = 0;
+      const hit = () => placed.some((p) => r.left < p.right + 6 && r.right > p.left - 6 && r.top - lift < p.bottom + 1 && r.bottom - lift > p.top - 1);
+      while (lift <= 64 && hit()) lift += 3;
+      const fits = lift <= 64;
+      item.inner.style.transform = `translateY(${-lift}px)`; item.inner.style.opacity = fits ? '' : '0';
+      if (fits) placed.push({ left: r.left, right: r.right, top: r.top - lift, bottom: r.bottom - lift });
+    }
   }
 }
 build(); for (const row of model.rows) rowScale.set(row.id, 1); updateTerrain(true); applyTau();

@@ -14,6 +14,10 @@
   .eyebrow { color: var(--muted); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; }
   h1 { margin: 4px 0 2px; font-size: 44px; font-weight: 600; letter-spacing: -0.01em; }
   .sub { color: var(--ink-2); font-size: 15px; line-height: 1.4; }
+  .repos { margin-top: 12px; display: grid; grid-template-columns: auto auto; justify-content: start; gap: 4px 12px; font-size: 14px; pointer-events: auto; }
+  .repos span { color: var(--muted); }
+  .repos a { color: #fff; font-weight: 500; text-decoration: none; }
+  .repos a:hover { text-decoration: underline; }
   .stats { top: 26px; right: 30px; display: flex; gap: 26px; text-align: right; }
   .stat .value { font-size: 34px; font-weight: 600; line-height: 1; }
   .stat .name { color: var(--muted); font-size: 12px; margin-top: 5px; }
@@ -32,7 +36,7 @@
   .key-people { flex-wrap: wrap; gap: 6px 14px; margin-top: 4px; }
   .key-people span { display: inline-flex; align-items: center; gap: 6px; }
   .key-people i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
-  .label.section { display: flex; flex-direction: column; gap: 1px; }
+  .label.section .body { display: flex; flex-direction: column; gap: 1px; transition: opacity 0.25s; }
   .label.section b { color: #fff; font-size: 13px; font-weight: 600; }
   .label.section span { color: var(--muted); font-size: 11px; }
   .label { color: var(--ink-2); font-size: 11px; white-space: nowrap; text-shadow: 0 0 6px #000; }
@@ -47,7 +51,7 @@
 </head>
 <body>
 <div id="scene"></div>
-<div class="hud title"><div class="eyebrow">A world model, built by an agent with the Meaning Model</div><h1 id="title">Story Landscape</h1><div class="sub" id="sub"></div></div>
+<div class="hud title"><div class="eyebrow">A world model, built by an agent with the Meaning Model</div><h1 id="title">Story Landscape</h1><div class="sub" id="sub"></div><div class="repos"><span>The story and this view</span><a href="https://github.com/emergent-wisdom/story">github.com/emergent-wisdom/story</a><span>The tool</span><a href="https://github.com/emergent-wisdom/meaning-model">github.com/emergent-wisdom/meaning-model</a></div></div>
 <div class="hud stats" id="stats"></div>
 <div class="hud legend" id="legend"></div>
 <div class="hud caption"><div class="kind" id="kind">The agent</div><div class="text" id="text"></div></div>
