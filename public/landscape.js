@@ -136,9 +136,9 @@ const labels = new CSS2DRenderer(); labels.setSize(innerWidth, innerHeight);
 Object.assign(labels.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none' }); host.append(labels.domElement);
 const scene = new THREE.Scene(); scene.background = new THREE.Color('#050608'); scene.fog = new THREE.FogExp2('#050608', 0.0085);
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 800);
-camera.position.set(-LENGTH * 0.38, 44, model.depth * 0.5 + 46);
+camera.position.set(-LENGTH * 0.46, 52, model.depth * 0.62 + 58);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(6, 2, model.depth * 0.12); controls.enableDamping = true; controls.autoRotate = !params.has('still'); controls.autoRotateSpeed = 0.35;
+controls.target.set(9, 1, model.depth * 0.06); controls.enableDamping = true; controls.autoRotate = !params.has('still'); controls.autoRotateSpeed = 0.35;
 scene.add(new THREE.AmbientLight('#8fa0c0', 0.55));
 const sun = new THREE.DirectionalLight('#ffffff', 1.1); sun.position.set(-30, 60, 40); scene.add(sun);
 const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
@@ -172,6 +172,18 @@ function build() {
     const ridge = new THREE.Line(line, new THREE.LineBasicMaterial({ color: row.color, transparent: true, opacity: row.kind === 'world' ? 0.55 : 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
     ridge.userData.row = row; world.add(ridge); ridges.push(ridge);
   }
+  // Sections within each block: what the ridges are and what their height means.
+  const SECTION = { life: ['life & shocks', 'plateaus are periods, peaks are shocks'], process: ['life processes', 'how much happens in each'],
+    series: ['wants · feels · expects', 'share of the main answer'], world: ['long developments', 'how much happens inside each'] };
+  const sections = new Map();
+  for (const row of rows) { const key = `${row.group.id}|${row.kind}`; if (!sections.has(key)) sections.set(key, { kind: row.kind, hue: row.group.hue, zs: [] }); sections.get(key).zs.push(row.z); }
+  for (const section of sections.values()) {
+    const [name, meaning] = SECTION[section.kind] ?? [section.kind, ''];
+    const label = document.createElement('div'); label.className = 'label section';
+    const head = document.createElement('b'); head.textContent = `${section.zs.length > 1 ? `${section.zs.length} ` : ''}${name}`;
+    const note = document.createElement('span'); note.textContent = meaning; label.append(head, note);
+    const object = new CSS2DObject(label); object.position.set(LENGTH / 2 + 1.4, 0.3, (Math.min(...section.zs) + Math.max(...section.zs)) / 2); object.center.set(0, 0.5); world.add(object);
+  }
   // Group names.
   const groups = new Map(); for (const row of rows) { if (!groups.has(row.group.id)) groups.set(row.group.id, { ...row.group, zs: [] }); groups.get(row.group.id).zs.push(row.z); }
   for (const group of groups.values()) {
@@ -182,7 +194,7 @@ function build() {
   }
   // Time along the front edge.
   const marks = model.deep
-    ? [300000, 100000, 30000, 10000, 3000, 1000, 300, 100, 30, 10, 1].filter((age) => age < model.present - model.earliest).map((age) => [model.present - age, age >= 1000 ? `${age / 1000}k years ago` : `${age} years ago`]).concat([[model.present, formatTime(model.present)]])
+    ? [300000, 100000, 30000, 10000, 3000, 1000, 300, 100, 30, 10, 1].filter((age) => age < model.present - model.earliest).map((age) => [model.present - age, age >= 1000 ? `${age / 1000}k years ago` : `${age} ${age === 1 ? 'year' : 'years'} ago`]).concat([[model.present, formatTime(model.present)]])
     : Array.from({ length: 9 }, (_, k) => { const t = model.domain[0] + (k / 8) * (model.domain[1] - model.domain[0]); return [t, formatTime(t)]; });
   for (const [t, text] of marks) {
     const label = document.createElement('div'); label.className = 'label time'; label.textContent = text;
@@ -298,7 +310,25 @@ function hud() {
   const cuts = data.people.flatMap((person) => [...person.series.flatMap((series) => series.points), ...person.decisions]).filter((item) => visibleAt(bornOf(item))).length;
   const tiles = [['Events', events], ['Cuts', cuts], ['Functions', model.rows.filter((row) => visibleAt(Number.isFinite(row.born) ? row.born : -Infinity)).length], ['Thoughts', nodes.filter((node) => node.category !== 'passage').length], ['Words of prose', nodes.reduce((sum, node) => sum + node.words, 0)]];
   document.getElementById('stats').replaceChildren(...tiles.map(([name, value]) => { const tile = document.createElement('div'); tile.className = 'stat'; const v = document.createElement('div'); v.className = 'value'; v.textContent = value.toLocaleString(); const n = document.createElement('div'); n.className = 'name'; n.textContent = name; tile.append(v, n); return tile; }));
-  document.getElementById('legend').replaceChildren(...[...model.principals.map((person, i) => [person.name, HUES[i]]), ['The world', WORLD], ['Understanding and prose, above', '#c9d4ff']].map(([name, hue]) => { const line = document.createElement('div'); line.append(document.createTextNode(name)); const dot = document.createElement('i'); dot.style.background = hue; line.append(dot); return line; }));
+  const key = document.getElementById('legend'); key.replaceChildren();
+  const heading = document.createElement('div'); heading.className = 'key-head'; heading.textContent = 'How to read it'; key.append(heading);
+  const glyph = (kind, hue) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('width', 30); svg.setAttribute('height', 16);
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', kind === 'ridge' ? 'path' : kind === 'beam' ? 'rect' : kind === 'diamond' ? 'path' : 'circle');
+    if (kind === 'ridge') { shape.setAttribute('d', 'M1 14 C 7 14, 9 3, 14 5 S 22 12, 29 2'); shape.setAttribute('fill', 'none'); shape.setAttribute('stroke', hue); shape.setAttribute('stroke-width', 2); }
+    if (kind === 'beam') { shape.setAttribute('x', 14); shape.setAttribute('y', 1); shape.setAttribute('width', 2); shape.setAttribute('height', 14); shape.setAttribute('fill', hue); }
+    if (kind === 'diamond') { shape.setAttribute('d', 'M15 1 L21 8 L15 15 L9 8 Z'); shape.setAttribute('fill', hue); }
+    if (kind === 'light') { shape.setAttribute('cx', 15); shape.setAttribute('cy', 8); shape.setAttribute('r', 5); shape.setAttribute('fill', hue); shape.setAttribute('opacity', 0.9); }
+    svg.append(shape); return svg;
+  };
+  const line = (kind, hue, text) => { const row = document.createElement('div'); row.className = 'key-row'; row.append(glyph(kind, hue)); const span = document.createElement('span'); span.textContent = text; row.append(span); key.append(row); };
+  line('ridge', '#c3c2b7', 'A ridge is one function of the model over time');
+  line('beam', '#c3c2b7', 'A beam is an Event: something that happens');
+  line('diamond', '#c3c2b7', 'A diamond is a decision; it glows once the model has drawn it');
+  line('light', '#c9d4ff', 'Lights above are the agent\'s understanding and the prose, threaded to their moments');
+  const people = document.createElement('div'); people.className = 'key-row key-people';
+  for (const [name, hue] of [...model.principals.map((person, i) => [person.name, HUES[i]]), ['the world', WORLD]]) { const tag = document.createElement('span'); const dot = document.createElement('i'); dot.style.background = hue; tag.append(dot, document.createTextNode(name)); people.append(tag); }
+  key.append(people);
   const cursor = Number.isFinite(tau) ? tau : T1;
   document.getElementById('fill').style.width = `${Math.max(0, Math.min(100, (active(cursor) / Math.max(1, active(T1))) * 100))}%`;
   document.getElementById('clock').textContent = `${new Date(cursor).toISOString().slice(11, 19)} UTC · ${Math.round(active(cursor) / 60000)} minutes of work`;
@@ -324,6 +354,14 @@ function play() {
 document.getElementById('play').addEventListener('click', () => (playing ? stop() : play()));
 document.getElementById('track').addEventListener('pointerdown', (e) => { stop(); const rect = e.currentTarget.getBoundingClientRect(); tau = active.invert(((e.clientX - rect.left) / rect.width) * active(T1)); applyTau(); });
 
+// The hovered function stands out; the others step back.
+let highlighted = null;
+function highlight(rowId) {
+  if (rowId === highlighted) return; highlighted = rowId;
+  for (const ridge of ridges) { const own = ridge.userData.row.id === rowId; ridge.material.opacity = rowId === null ? (ridge.userData.row.kind === 'world' ? 0.55 : 0.9) : own ? 1 : 0.18; }
+  terrain.material.opacity = rowId === null ? 1 : 0.55; terrain.material.transparent = rowId !== null;
+}
+
 // Hover: what a beam, diamond or thought is.
 const ray = new THREE.Raycaster(); const pointer = new THREE.Vector2();
 renderer.domElement.addEventListener('pointermove', (e) => {
@@ -332,11 +370,12 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   if (!hit && terrain) {
     const ground = ray.intersectObject(terrain, false)[0];
     if (ground) { const row = model.rows.reduce((best, r) => (Math.abs(r.z - ground.point.z) < Math.abs((best?.z ?? Infinity) - ground.point.z) ? r : best), null);
-      if (row) { const t = model.T(ground.point.x / LENGTH + 0.5);
+      if (row) { highlight(row.id); const t = model.T(ground.point.x / LENGTH + 0.5);
         tip.replaceChildren(...[[row.group.label, 'm'], [row.label, 'v'], [formatTime(t), 'm']].map(([text, cls]) => { const line = document.createElement('div'); line.className = cls; line.textContent = text; return line; }));
         tip.hidden = false; tip.style.left = `${Math.min(e.clientX + 14, innerWidth - 440)}px`; tip.style.top = `${Math.min(e.clientY + 14, innerHeight - 120)}px`; return; } }
   }
-  if (!hit) { tip.hidden = true; return; }
+  if (!hit) { tip.hidden = true; highlight(null); return; }
+  highlight(hit.object.userData.row?.id ?? null);
   const u = hit.object.userData; const rows = [];
   if (u.event) rows.push([u.event.label, 'v'], [formatTime(u.event.start), 'm'], [clip(u.event.description, 260), '']);
   else if (u.decision) rows.push([u.decision.question, 'v'], ...u.decision.answers.slice(0, 5).map((a) => [`${Math.round(a.weight * 100)}%  ${a.key.replace(/[_.-]+/g, ' ')}${u.decision.drawn?.realized === a.key ? '  ← drawn' : ''}`, '']));
