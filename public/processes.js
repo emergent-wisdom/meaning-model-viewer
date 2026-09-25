@@ -161,32 +161,41 @@ principals.forEach((person) => {
   }
 });
 
-// The agent's notes: thoughts, author records, draws and world stages from the graph. A note about a moment floats over
-// it, threaded down; the others line the back in the order the agent made them. Hover any light to read it.
-const NOTE = { thought: ['Thought', '#c9d4ff'], author: ['Author record', '#ffd49a'], draw: ['Draw', '#ffffff'], world: ['World stage', '#b9aefc'], reference: ['Model reference', '#8fe3c9'], director: ['Director', '#ffb3c7'], review: ['Review', '#ffe08a'] };
-const hoverable = []; const notes = [];
+// The agent's thoughts: every note in the story graph (thoughts, author records, draws, world stages, references) and the
+// prose passages, as a layer of light behind the processes, never in front of them. A note sits at the moments it is
+// about, else beside the notes it links to, else in the order the agent made it; the graph's links run between them.
+// Hidden until the Thoughts button shows them; hover any light to read it.
+const tip = document.getElementById('tip');
+const NOTE = { thought: ['Thought', '#c9d4ff', 0], author: ['Author record', '#ffd49a', 1], draw: ['Draw', '#ffffff', 2], world: ['World stage', '#b9aefc', 3], reference: ['Model reference', '#8fe3c9', 4], director: ['Director', '#ffb3c7', 2], review: ['Review', '#ffe08a', 1], passage: ['Prose', '#fff0d0', 5] };
+const hoverable = []; const notes = []; const mind = new THREE.Group(); mind.visible = false;
 {
-  const anchorsOf = new Map(); for (const edge of data.graph.edges) if (edge.target?.anchor) { if (!anchorsOf.has(edge.source)) anchorsOf.set(edge.source, []); anchorsOf.get(edge.source).push(edge.target.anchor); }
-  const groupZ = (group) => { const zs = rows.filter((row) => row.group === group).map((row) => row.z); return (Math.min(...zs) + Math.max(...zs)) / 2; };
-  const groupOfEvent = (event) => {
-    const touched = (event.processIds ?? []).map((id) => rowOf.get(id)).filter(Boolean); if (touched.length) return touched[0].group;
-    const person = principals.find((p) => event.participants?.includes(p.id)); return groups.find((g) => g.id === person?.id) ?? groups.at(-1);
-  };
-  const unanchored = [];
-  for (const node of data.graph.nodes.filter((n) => n.category !== 'passage' && n.category !== 'root')) {
-    const [kind, color] = NOTE[node.category] ?? ['Note', '#dddddd'];
-    const moments = (anchorsOf.get(node.id) ?? []).map((id) => byId.get(id)).filter((e) => e && Number.isFinite(e.start) && e.start >= T0 - 0.3 && e.start <= T1);
-    const light = spark(color, 2.1); light.userData = { hover: { kind, title: node.title, text: node.text, about: moments.map((e) => e.label) } };
-    if (moments.length) {
-      const t = moments.map((e) => e.start).sort((a, b) => a - b)[Math.floor(moments.length / 2)]; const group = groupOfEvent(moments[0]); const z = groupZ(group);
-      light.position.set(xOf(t), AMP + 5.5 + (notes.length % 4) * 1.4, z); light.userData.t = t;
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([light.position.clone(), new THREE.Vector3(xOf(t), 0.2, z)]), additive(color, 0.18));
-      light.add(line); line.position.sub(light.position); scene.add(light); notes.push(light); hoverable.push(light);
-    } else unanchored.push({ node, light });
+  const graphNodes = data.graph.nodes.filter((n) => n.category !== 'root'); const place = new Map();
+  const neighbours = new Map(); const moments = new Map();
+  for (const edge of data.graph.edges) {
+    if (edge.target.node) { for (const [a, b] of [[edge.source, edge.target.node], [edge.target.node, edge.source]]) { if (!neighbours.has(a)) neighbours.set(a, []); neighbours.get(a).push(b); } }
+    const event = byId.get(edge.target.event); if (event && Number.isFinite(event.start)) { if (!moments.has(edge.source)) moments.set(edge.source, []); moments.get(edge.source).push(event.start); }
   }
-  unanchored.sort((a, b) => String(a.node.born?.at ?? '').localeCompare(String(b.node.born?.at ?? '')));
-  unanchored.forEach(({ light }, i) => { light.position.set(-LENGTH / 2 + ((i + 0.5) / unanchored.length) * LENGTH, AMP + 13 + Math.sin(i * 0.9) * 0.8, zBack - 7); light.userData.t = -Infinity; scene.add(light); hoverable.push(light); });
-  if (unanchored.length) label('lane', `The agent's notes, in the order it made them`, new THREE.Vector3(-LENGTH / 2 - 1.2, AMP + 13, zBack - 7), [1, 0.5]);
+  const layer = (node) => NOTE[node.category]?.[2] ?? 2;
+  const back = (node, x) => new THREE.Vector3(x, AMP + 8 + layer(node) * 1.6, zBack - 9 - layer(node) * 2.2);
+  for (const node of graphNodes) { const ts = (moments.get(node.id) ?? []).filter((t) => t >= T0 - 0.3 && t <= T1).sort((a, b) => a - b); if (ts.length) place.set(node.id, back(node, xOf(ts[Math.floor(ts.length / 2)]))); }
+  for (let pass = 0; pass < 4; pass += 1) for (const node of graphNodes) {
+    if (place.has(node.id)) continue; const near = (neighbours.get(node.id) ?? []).map((id) => place.get(id)).filter(Boolean);
+    if (near.length) place.set(node.id, back(node, near.reduce((sum, p) => sum + p.x, 0) / near.length + ((node.id.length % 7) - 3) * 0.9));
+  }
+  const rest = graphNodes.filter((node) => !place.has(node.id)).sort((a, b) => String(a.born?.at ?? '').localeCompare(String(b.born?.at ?? '')));
+  rest.forEach((node, i) => place.set(node.id, back(node, -LENGTH / 2 + ((i + 0.5) / rest.length) * LENGTH)));
+  for (const node of graphNodes) {
+    const [kind, color] = NOTE[node.category] ?? ['Note', '#dddddd'];
+    const light = spark(color, node.category === 'passage' ? 2.6 : 2.0); light.position.copy(place.get(node.id));
+    light.userData = { hover: { kind, title: node.title, text: node.text, about: [...new Set((data.graph.edges.filter((e) => e.source === node.id && e.target.event).map((e) => byId.get(e.target.event)?.label).filter(Boolean)))] } };
+    mind.add(light); notes.push(light); hoverable.push(light);
+  }
+  const seen = new Set();
+  for (const edge of data.graph.edges) {
+    if (!edge.target.node) continue; const a = place.get(edge.source); const b = place.get(edge.target.node); if (!a || !b) continue;
+    const key = [edge.source, edge.target.node].sort().join('|'); if (seen.has(key)) continue; seen.add(key);
+    mind.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), additive('#c9d4ff', 0.16)));
+  }
 }
 
 // Causal links between the story's events, as arcs in a lane before the processes.
@@ -223,7 +232,6 @@ document.getElementById('legend').innerHTML = '<div class="key-head">How to read
   + keyRow('<svg width="14" height="14"><path d="M7 1 L13 7 L7 13 L1 7Z" fill="#fff"/></svg>', 'A diamond is a decision the model drew from its weights')
   + keyRow('<svg width="28" height="8"><rect width="15" height="8" rx="3" fill="#ffb057"/><rect x="15" width="10" height="8" fill="#58b4ff"/></svg>', 'How much of an act comes from love and how much from fear')
   + keyRow('<svg width="28" height="12"><path d="M1 11 Q14 -4 27 11" stroke="#ff8a4c" stroke-width="2" fill="none"/></svg>', 'An arc is a causal link: causes, enables, fulfils a forecast')
-  + keyRow('<svg width="16" height="16"><circle cx="8" cy="8" r="4" fill="#c9d4ff"/><circle cx="8" cy="8" r="7.5" fill="none" stroke="#c9d4ff" stroke-opacity="0.35"/></svg>', `A light above is one of the agent's ${notes.length + hoverable.filter((item) => !notes.includes(item)).length} notes: hover it, or an event's spark, to read it`)
   + `<div class="key-row" style="gap:12px;flex-wrap:wrap">${groups.map((g) => `<span style="display:inline-flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:50%;background:${g.hue};display:inline-block"></i>${g.label}</span>`).join('')}</div>`;
 
 // ---- the story, as the tool renders it from the graph ------------------------------------------------------------------------
@@ -242,6 +250,7 @@ document.getElementById('reader-close').addEventListener('click', () => { docume
 addEventListener('keydown', (event) => { if (event.key === 'Escape') document.getElementById('reader').hidden = true; });
 if (params.has('read')) document.getElementById('read').click();
 
+
 // ---- time -----------------------------------------------------------------------------------------------------------------
 let now = T1; let playing = false;
 const month = (t) => new Date(Date.UTC(Math.floor(t), Math.floor((t % 1) * 12), 1)).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -249,7 +258,7 @@ function apply() {
   const upto = Math.max(0, Math.min(NX, Math.floor(((now - T0) / (T1 - T0)) * (NX - 1)) + 1));
   for (const row of rows) { row.wall.geometry.setDrawRange(0, Math.max(0, (upto - 1) * 6)); row.crest.geometry.setDrawRange(0, upto); row.value.element.textContent = format(row, valueAt(row.measure.points, Math.min(now, T1))); }
   for (const thread of threads) { thread.visible = thread.userData.t <= now; if (thread.userData.tag) thread.userData.tag.visible = thread.visible; }
-  for (const item of [...decisions, ...lenses, ...arcs, ...notes]) item.visible = item.userData.t <= now;
+  for (const item of [...decisions, ...lenses, ...arcs]) item.visible = item.userData.t <= now;
   sweep.position.x = xOf(now); sweep.visible = playing;
   document.getElementById('fill').style.width = `${((now - T0) / (T1 - T0)) * 100}%`;
   document.getElementById('clock').textContent = month(Math.min(now, T1 - 0.01));
@@ -286,14 +295,14 @@ function declutter() {
     const free = !hits(r); tag.element.style.opacity = free ? '' : '0'; if (free) placed.push(r);
   }
 }
-const tip = document.getElementById('tip'); let pointerAt = null;
+let pointerAt = null;
 renderer.domElement.addEventListener('pointermove', (event) => { pointerAt = { x: event.clientX, y: event.clientY }; });
 renderer.domElement.addEventListener('pointerleave', () => { pointerAt = null; tip.hidden = true; });
 function hover() {
   if (!pointerAt) return;
   // The nearest light on screen within 16 pixels: the lights are small, so a pointer near one reads it.
   let hit = null; let best = 16 * 16; const at = new THREE.Vector3();
-  for (const item of [...hoverable, ...eventSparks]) {
+  for (const item of [...(mind.visible ? hoverable : []), ...eventSparks]) {
     if (!item.visible || item.parent?.visible === false) continue;
     item.getWorldPosition(at).project(camera); if (at.z > 1) continue;
     const dx = (at.x + 1) / 2 * innerWidth - pointerAt.x; const dy = (1 - at.y) / 2 * innerHeight - pointerAt.y; const d = dx * dx + dy * dy;

@@ -244,12 +244,13 @@ const graphNodes = [...nodes.values()].map((node) => ({
 const keep = new Set(graphNodes.map((node) => node.id));
 const eventIds = new Set(events.map((event) => event.id));
 const personIds = new Set(people.map((person) => person.id));
+const cutEvent = new Map((mm.normalized_cuts ?? []).map((cut) => [cut.id, cut.parent_event_id ?? null]));
 const graphEdges = [...edges.values()].map((edge) => {
   const source = edge.source?.kind === 'node' ? edge.source.node_id : null;
-  const target = edge.target?.kind === 'node' ? { node: edge.target.node_id } : edge.target?.kind === 'anchor' ? { anchor: edge.target.anchor_id, anchorKind: edge.target.anchor_kind } : null;
+  const target = edge.target?.kind === 'node' ? { node: edge.target.node_id } : edge.target?.kind === 'anchor' ? { anchor: edge.target.anchor_id, anchorKind: edge.target.anchor_kind,
+    event: edge.target.anchor_kind === 'event' ? edge.target.anchor_id : edge.target.anchor_kind === 'normalized_cut' ? cutEvent.get(edge.target.anchor_id) ?? null : null } : null;
   return { id: edge.id, source, target, relation: edge.relation ?? edge.family ?? null, born: edgeBorn.get(edge.id) ?? null };
-}).filter((edge) => edge.source && keep.has(edge.source) && edge.target && ((edge.target.node && keep.has(edge.target.node))
-  || (edge.target.anchor && (eventIds.has(edge.target.anchor) || personIds.has(edge.target.anchor)))));
+}).filter((edge) => edge.source && keep.has(edge.source) && edge.target && ((edge.target.node && keep.has(edge.target.node)) || edge.target.anchor));
 
 // ---- construction timeline -------------------------------------------------------------------------------------------------------
 const steps = [

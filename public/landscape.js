@@ -243,7 +243,7 @@ function build() {
   for (const person of model.principals) { const zs = rows.filter((row) => row.group.id === person.id).map((row) => row.z); if (zs.length) personRowZ.set(person.id, (Math.min(...zs) + Math.max(...zs)) / 2); }
   const ownerOf = (eventId) => { for (const person of model.principals) { if (person.life && (person.life.eventId === eventId)) return person.id; } const row = rowOfEvent.get(eventId); return row?.group.id ?? null; };
   for (const edge of data.graph.edges) {
-    if (!edge.target.anchor) continue; const event = model.byId.get(edge.target.anchor);
+    if (!edge.target.anchor) continue; const event = model.byId.get(edge.target.event ?? edge.target.anchor);
     if (!nodeHome.has(edge.source) && event && Number.isFinite(event.start)) nodeHome.set(edge.source, { event, owner: ownerOf(event.id) });
   }
   const bornTimes = data.graph.nodes.map((node) => (node.born?.at ? Date.parse(node.born.at) : 0)); const minBorn = Math.min(...bornTimes); const maxBorn = Math.max(...bornTimes, minBorn + 1);
