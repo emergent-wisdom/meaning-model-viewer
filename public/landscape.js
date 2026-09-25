@@ -139,9 +139,9 @@ const labels = new CSS2DRenderer(); labels.setSize(innerWidth, innerHeight);
 Object.assign(labels.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none' }); host.append(labels.domElement);
 const scene = new THREE.Scene(); scene.background = new THREE.Color('#050608'); scene.fog = new THREE.FogExp2('#050608', 0.0085);
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 800);
-camera.position.set(-LENGTH * 0.46, 52, model.depth * 0.62 + 58);
+camera.position.set(-LENGTH * 0.36, 47, model.depth * 0.62 + 56);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(9, 1, model.depth * 0.06); controls.enableDamping = true; controls.autoRotate = !params.has('still'); controls.autoRotateSpeed = 0.35;
+controls.target.set(12, 2, model.depth * 0.05); controls.enableDamping = true; controls.autoRotate = !params.has('still'); controls.autoRotateSpeed = 0.35;
 scene.add(new THREE.AmbientLight('#8fa0c0', 0.55));
 const sun = new THREE.DirectionalLight('#ffffff', 1.1); sun.position.set(-30, 60, 40); scene.add(sun);
 const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
@@ -202,7 +202,7 @@ function build() {
   for (const group of groups.values()) {
     const label = document.createElement('div'); label.className = 'label group'; label.textContent = group.label; label.style.color = group.hue;
     const object = new CSS2DObject(label); object.position.set(-LENGTH / 2 - 1.5, 0.5, (Math.min(...group.zs) + Math.max(...group.zs)) / 2); object.center.set(1, 0.5); world.add(object);
-    const count = document.createElement('div'); count.className = 'label'; count.textContent = `${group.zs.length} functions`;
+    const count = document.createElement('div'); count.className = 'label group-count'; count.textContent = `${group.zs.length} functions`;
     const countObject = new CSS2DObject(count); countObject.position.set(-LENGTH / 2 - 1.5, -1.2, (Math.min(...group.zs) + Math.max(...group.zs)) / 2); countObject.center.set(1, 0.5); world.add(countObject);
   }
   // Time along the front edge.
@@ -314,8 +314,17 @@ function activeClock(times) {
 }
 let active = activeClock(stepTimes);
 const visibleAt = (born) => born <= tau;
+// A caption: markdown headings become a small heading line; the rest is plain text.
+function setCaption(raw) {
+  const text = String(raw ?? ''); const heads = [...text.matchAll(/^#{1,4}\s+(.+)$/gm)].map((m) => m[1].trim());
+  const body = text.replace(/^#{1,4}\s+.+$/gm, ' ').replace(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, '$1').replace(/\s+/g, ' ').trim();
+  const element = document.getElementById('text'); element.replaceChildren();
+  if (heads.length) { const h = document.createElement('div'); h.className = 'head'; h.textContent = heads.at(-1); element.append(h); }
+  element.append(clip(body, 420));
+}
 function hud() {
-  document.getElementById('title').textContent = data.title ?? 'Story Landscape';
+  { const full = data.title ?? 'Story Landscape'; const m = full.match(/^(.*?)\s*(\([^)]*\))$/); const t = document.getElementById('title');
+    t.textContent = m ? m[1] : full; if (m) { const aside = document.createElement('span'); aside.className = 'aside'; aside.textContent = ` ${m[2]}`; t.append(aside); } }
   document.getElementById('sub').textContent = `${model.principals.map((person) => person.name).join(', ')}. ${model.rows.length} functions over time, each the model's own record, rising in the order the agent built them.`;
   const bornOf = (item) => (item?.born?.at ? Date.parse(item.born.at) : -Infinity);
   const events = data.events.filter((event) => visibleAt(bornOf(event))).length;
@@ -348,8 +357,8 @@ function hud() {
   const newest = data.graph.nodes.filter((node) => node.born?.at && Date.parse(node.born.at) <= cursor).sort((a, b) => Date.parse(b.born.at) - Date.parse(a.born.at))[0];
   const step = data.steps.filter((item) => item.kind === 'graph' && item.label && Date.parse(item.at) <= cursor).at(-1);
   const names = { passage: 'Prose', thought: 'Thought', world: 'World stage', director: 'Director', draw: 'Drawn decision', author: 'Author record', reference: 'Other model' };
-  if (newest && (!step || Date.parse(newest.born.at) >= Date.parse(step.at)) && ['passage', 'thought', 'director', 'world'].includes(newest.category)) { document.getElementById('kind').textContent = names[newest.category]; document.getElementById('text').textContent = clip(newest.text, 480); }
-  else if (step) { document.getElementById('kind').textContent = 'The agent'; document.getElementById('text').textContent = clip(step.label, 480); }
+  if (newest && (!step || Date.parse(newest.born.at) >= Date.parse(step.at)) && ['passage', 'thought', 'director', 'world'].includes(newest.category)) { document.getElementById('kind').textContent = names[newest.category]; setCaption(data.story?.units.find((unit) => unit.id === newest.id)?.text ?? newest.text.replace(/^#{1,4}\s+/, '')); }
+  else if (step) { document.getElementById('kind').textContent = 'The agent'; setCaption(step.label); }
 }
 function applyTau() {
   for (const row of model.rows) row.target = visibleAt(Number.isFinite(row.born) ? row.born : -Infinity) ? 1 : 0;
@@ -424,7 +433,10 @@ addEventListener('keydown', (event) => { if (event.key === 'Escape') document.ge
 // Section notes and ridge names that would cover the time marks or each other lift a little; the rest wait for hover.
 function declutter() {
   const placed = [];
-  for (const el of labels.domElement.querySelectorAll('.label.time, .label.group')) { const r = el.getBoundingClientRect(); if (r.width) placed.push(r); }
+  const panels = [...document.querySelectorAll('.hud.caption, .hud.bar, .hud.legend, .hud.title, .hud.stats')].map((el) => el.getBoundingClientRect());
+  const under = (r) => panels.some((p) => r.left < p.right && r.right > p.left && r.top < p.bottom && r.bottom > p.top);
+  for (const el of labels.domElement.querySelectorAll('.label.time, .label.group, .label.group-count')) { el.style.opacity = ''; const r = el.getBoundingClientRect(); if (!r.width) continue; if (under(r)) { el.style.opacity = '0'; continue; } placed.push(r); }
+  for (const r of panels) placed.push(r);
   for (const list of [sectionNames, ridgeNames]) {
     const items = [];
     for (const item of list) { if (!item.object.visible) continue; const r = item.object.element.getBoundingClientRect(); if (r.width) items.push([item, r]); }
