@@ -5,3 +5,5 @@ live.log
 public/data/*.json
 !public/data/rabbit-hole.json
 renders/
+*.sqlite-shm
+*.sqlite-wal
