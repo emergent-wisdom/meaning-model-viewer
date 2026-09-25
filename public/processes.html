@@ -29,6 +29,10 @@
   .track { flex: 1; height: 6px; background: rgba(255,255,255,0.10); border-radius: 3px; position: relative; cursor: pointer; }
   .fill { position: absolute; inset: 0 auto 0 0; width: 100%; background: linear-gradient(90deg, #3987e5, #9085e9); border-radius: 3px; }
   .clock { color: #fff; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 150px; text-align: right; }
+  .tip { position: fixed; z-index: 5; pointer-events: none; max-width: 440px; background: #151517; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45; box-shadow: 0 0 0 1px var(--ring) inset, 0 10px 30px rgba(0,0,0,0.6); }
+  .tip[hidden] { display: none; }
+  .tip .k { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 3px; }
+  .tip .v { font-weight: 600; color: #fff; margin-bottom: 4px; } .tip .m { color: var(--ink-2); max-height: 16em; overflow: hidden; } .tip .a { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .bar button.read { width: auto; height: 36px; border-radius: 18px; padding: 0 16px; background: rgba(255,255,255,0.12); font-size: 14px; font-weight: 500; }
   .bar button.read:hover { background: rgba(255,255,255,0.2); }
   .caption { max-width: min(760px, 46vw); }
@@ -70,6 +74,7 @@
 <div class="hud legend" id="legend"></div>
 <div class="hud caption"><div class="kind" id="kind">The story</div><div class="text" id="text"></div></div>
 <div class="hud bar"><button id="play" aria-label="Play the story's years">▶</button><button id="read" class="read">Read the story</button><div class="track" id="track"><div class="fill" id="fill"></div></div><div class="clock" id="clock"></div></div>
+<div class="tip" id="tip" hidden></div>
 <aside class="reader" id="reader" hidden aria-label="The story"><button class="close" id="reader-close" aria-label="Close the story">✕</button><div class="source">The story as the Meaning Model renders it from the graph.</div><div id="reader-body"></div></aside>
 <script type="module" src="processes.js"></script>
 </body>
