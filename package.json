@@ -8,6 +8,9 @@
   },
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "dependencies": {
     "@emergent-wisdom/meaning-model-mcp": "^0.3.0",
     "three": "^0.186.1"
