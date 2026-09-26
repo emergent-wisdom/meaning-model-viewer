@@ -311,8 +311,10 @@ function layoutAt() {
 const cameraFor = [null, null];
 function freeRect() {
   const panel = document.getElementById('panel').getBoundingClientRect(); const title = document.querySelector('.hud.title').getBoundingClientRect();
-  const right = panel.width && panel.left > innerWidth * 0.5 ? panel.left - 16 : innerWidth - 16;
-  return { left: 24, right, top: Math.min(title.bottom + 20, innerHeight * 0.3), bottom: innerHeight - 96 };
+  const top = Math.min(title.bottom + 20, innerHeight * 0.3);
+  // A folded panel ends above the scene, which can then take the whole width.
+  const right = panel.width && panel.left > innerWidth * 0.5 && panel.bottom > top - 10 ? panel.left - 16 : innerWidth - 24;
+  return { left: 24, right, top, bottom: innerHeight - 96 };
 }
 function boxOf(mode) {
   const shown = nodes.filter((node) => node.shown); const ys = []; const zs = [];
@@ -735,9 +737,11 @@ function showTip(target) {
     const scaffold = scaffoldOf.get(event.id);
     const roles = { world: 'The world', development: 'A long development', life: 'A life', inner: 'An inner life', period: 'A period of a life', arc: 'A change arc', phase: 'A phase of a change arc', slow: 'A slow process of a life', part: 'A part', moment: 'A moment' };
     tip.append(line('k', `${roles[event.role] ?? 'An Event'} · level ${event.depth} · ${who}`), line('v', clip(event.label, 200)));
-    tip.append(line('m', `${range(event.reach[0], event.reach[1])}${Number.isFinite(event.start) ? '' : ' (the span of what it holds)'}`));
+    tip.append(line('m', `${range(event.reach[0], event.reach[1])}${Number.isFinite(event.start) ? '' : event.children.length ? ' (no interval of its own: the span of what it holds)' : ' (no interval of its own: the span of what holds it)'}`));
     if (event.description) tip.append(line('m', clip(event.description, 360)));
-    if (scaffold) tip.append(line('a', `Its process: ${scaffold.id}`));
+    if (scaffold) { const above = processById.get(scaffold.parent); const home = above ? byId.get(above.home) : null;
+      const kinds = { person_lifecycle_index: 'the process of a life', person_is_process: 'one of the slow processes a life runs through', change_arc_process: 'the process of a change', change_arc_phase_process: 'a phase of a change' };
+      tip.append(line('a', `A process of the model: ${kinds[scaffold.role] ?? 'a scaffold process'}${home ? `, within ${clip(home.name, 60)}` : ''}`)); }
     const moves = (event.processIds ?? []).map((id) => processById.get(id)).filter((process) => process?.kind === 'named').map(processName);
     if (moves.length) tip.append(line('a', `Moves: ${moves.join(' · ')}`));
     if (event.children.length) tip.append(line('a', `Holds ${event.children.length} Event${event.children.length === 1 ? '' : 's'}`));
@@ -772,7 +776,8 @@ function showTip(target) {
   } else if (target.kind === 'prose') {
     const { unit } = target; const text = unit.text.replace(/^#+\s+.*$/m, '').trim();
     tip.append(line('k', `Prose · ${timeText(unit.t, 2)}`), line('v', unit.title ?? ''), line('m', clip(text, 420)));
-    tip.append(line('a', `Tells: ${(unit.tells ?? []).map((tell) => clip(byId.get(tell.eventId)?.name, 44)).join(' · ')} · click to read`));
+    tip.append(line('a', `Tells: ${(unit.tells ?? []).map((tell) => clip(byId.get(tell.eventId)?.name, 44)).join(' · ')}`));
+    tip.append(line('a', 'Placed among the moments it shares the most words with, in story order. Click to read it.'));
   } else if (target.kind === 'causal') {
     const { relation } = target; tip.append(line('k', `A causal link · ${relation.kind.replace(/_/g, ' ')}`), line('v', `${clip(byId.get(relation.source)?.name, 70)} → ${clip(byId.get(relation.target)?.name, 70)}`));
   }
@@ -791,6 +796,8 @@ canvas.addEventListener('dblclick', (event) => {
 // ---- the panel -------------------------------------------------------------------------------------------------------------------------
 const depthNote = { 0: 'The world alone.', 1: 'The world and what it holds: long developments, lives, places and institutions.', 2: 'With the periods, change arcs and parts of each.', 3: 'With the phases of each change and the moments in them.', 4: 'With the moments within moments.', 5: 'Deeper still.', 6: 'The whole tree.' };
 function buildPanel() {
+  const whose = document.getElementById('whose'); whose.replaceChildren();
+  for (const group of GROUPS) { const item = document.createElement('span'); const dot = document.createElement('i'); dot.style.background = group.hue; item.append(dot, document.createTextNode(group.name)); whose.append(item); }
   const depths = document.getElementById('depths'); depths.replaceChildren();
   for (let level = 0; level <= MAX_DEPTH; level += 1) { const button = document.createElement('button'); button.textContent = String(level); button.addEventListener('click', () => { state.depth = level; changed(); }); depths.append(button); }
   const kinds = document.getElementById('kinds'); kinds.replaceChildren();
@@ -814,7 +821,9 @@ function buildPanel() {
   for (const button of document.querySelectorAll('#modes button')) button.addEventListener('click', () => { state.mode = button.dataset.mode === 'together' ? 1 : 0; changed(false); });
   document.getElementById('all').addEventListener('click', () => { const all = KINDS.every(([key]) => state.show.has(key)); state.show = all ? new Set(['processes']) : new Set(KINDS.map(([key]) => key)); changed(); });
   document.getElementById('lenses-all').addEventListener('click', () => { state.lenses = state.lenses.size === lenses.length ? new Set() : new Set(lenses.map((lens) => lens.id)); changed(); });
-  document.getElementById('fold').addEventListener('click', () => { const panel = document.getElementById('panel'); panel.classList.toggle('folded'); document.getElementById('fold').textContent = panel.classList.contains('folded') ? 'Unfold' : 'Fold'; fitCamera(); dirty = true; });
+  const fold = (on) => { const panel = document.getElementById('panel'); panel.classList.toggle('folded', on); document.getElementById('fold').textContent = on ? 'Unfold' : 'Fold'; fitCamera(); dirty = true; };
+  document.getElementById('fold').addEventListener('click', () => fold(!document.getElementById('panel').classList.contains('folded')));
+  if (params.has('fold')) fold(true);
 }
 function syncPanel() {
   for (const [i, button] of [...document.querySelectorAll('#depths button')].entries()) button.classList.toggle('on', i === state.depth);
@@ -831,7 +840,7 @@ buildPanel();
 const titleText = params.get('title') ?? data.title ?? 'Story Explorer';
 document.getElementById('title').textContent = titleText;
 document.getElementById('sub').textContent = `${events.length} Events in a tree ${MAX_DEPTH + 1} levels deep, from ${timeText(EARLIEST, 1e6)} to ${Math.round(PRESENT)}, with ${named.length} named processes, `
-  + `${data.processes.length - named.length} subsidiary ones and ${lenses.length} ${lenses.length === 1 ? 'lens' : 'lenses'}. Zoom from a moment to world history; add detail on the right.`;
+  + `${nodes.filter((node) => node.kind === 'sub').length} subsidiary ones and ${lenses.length} ${lenses.length === 1 ? 'lens' : 'lenses'}. Zoom from a moment to world history; add detail on the right.`;
 const inline = (text) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
 function openReader(unitId = null) {
   const reader = document.getElementById('reader'); const body = document.getElementById('reader-body'); body.replaceChildren(); reader.hidden = false; let target = null;
@@ -870,7 +879,8 @@ let urlTimer = null;
 function syncURL() {
   clearTimeout(urlTimer);
   urlTimer = setTimeout(() => {
-    const next = new URLSearchParams(); for (const key of ['data', 'title', 'live', 'still']) if (params.has(key)) next.set(key, params.get(key));
+    const next = new URLSearchParams(); for (const key of ['data', 'title', 'live']) if (params.has(key)) next.set(key, params.get(key));
+    if (document.getElementById('panel').classList.contains('folded')) next.set('fold', '');
     const digits = Math.max(0, Math.min(6, Math.ceil(-Math.log10(F.s)) + 3));
     if (state.mode === 1) next.set('view', 'together');
     if (currentPreset) { next.set('zoom', currentPreset); if (currentPreset === 'life' && lives.length) next.set('life', lives[lifeTurn % lives.length].name.toLowerCase()); }

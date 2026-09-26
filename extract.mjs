@@ -364,7 +364,9 @@ const lensList = await (async () => {
   const superseded = new Set(graphView.edges.filter((edge) => edge.relation === 'supersedes' && edge.target?.kind === 'node').map((edge) => edge.target.node_id));
   const defined = found.filter((node) => !superseded.has(node.nodeId)).map((node) => ({ ...node.data, nodeId: node.nodeId, builtIn: false, version: found.filter((other) => other.data.id === node.data.id).length }));
   const builtIn = { id: 'fear-love', name: 'Fear or love', builtIn: true, appliesTo: ['act'], answers: null, matchesQuestion: /\bfear\b[^?]*\blove\b|\blove\b[^?]*\bfear\b/iu,
-    question: 'What kinds of reasons lie behind {subject}: is it primarily out of fear or out of love, and what does that fear or love ask of the person?' };
+    question: 'What kinds of reasons lie behind {subject}: is it primarily out of fear or out of love, and what does that fear or love ask of the person?',
+    why: 'The same act can come from fear or from love, and what it does to the person and to the people around them depends on which.',
+    trajectory: 'A life that moves from acting out of fear to acting out of love, or back, has changed at its root.' };
   return [...(defined.some((lens) => lens.id === 'fear-love') ? [] : [builtIn]), ...defined];
 })();
 const liveCuts = allCuts.filter((cut) => !cut.withdrawn);

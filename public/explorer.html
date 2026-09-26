@@ -28,6 +28,8 @@
   .seg button { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 13px; padding: 5px 4px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
   .seg button:hover { color: #fff; background: rgba(255,255,255,0.07); }
   .seg button.on { background: rgba(255,255,255,0.16); color: #fff; font-weight: 600; }
+  .whose { display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 8px; font-size: 12px; color: var(--ink-2); }
+  .whose span { display: inline-flex; align-items: center; gap: 6px; } .whose i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   .depth-note { margin-top: 5px; font-size: 12px; color: var(--muted); line-height: 1.35; min-height: 2.7em; }
   .toggle { display: flex; align-items: center; gap: 9px; padding: 4px 4px; margin: 0 -4px; border-radius: 7px; cursor: pointer; line-height: 1.25; user-select: none; }
   .toggle:hover { background: rgba(255,255,255,0.06); }
@@ -104,7 +106,7 @@
 <div class="hud title"><div class="eyebrow">A world model an agent built with the Meaning Model</div><h1 id="title">Story Explorer</h1><div class="sub" id="sub"></div>
   <div class="repos"><span>The story and this view</span><a href="https://github.com/emergent-wisdom/story">github.com/emergent-wisdom/story</a><span>The tool</span><a href="https://github.com/emergent-wisdom/meaning-model">github.com/emergent-wisdom/meaning-model</a></div></div>
 <aside class="hud panel" id="panel" aria-label="What the view shows">
-  <section><h2>Representation <button id="fold" aria-label="Fold the panel">Fold</button></h2><div class="seg" id="modes"><button data-mode="layers">Layers</button><button data-mode="together">Together</button></div></section>
+  <section><h2>Representation <button id="fold" aria-label="Fold the panel">Fold</button></h2><div class="seg" id="modes"><button data-mode="layers">Layers</button><button data-mode="together">Together</button></div><div class="whose" id="whose"></div></section>
   <section><h2>Depth of the tree</h2><div class="seg" id="depths"></div><div class="depth-note" id="depth-note"></div></section>
   <section><h2>Show <button id="all">All</button></h2><div id="kinds"></div></section>
   <section><h2>Lenses <button id="lenses-all">All</button></h2><div id="lenses"></div></section>
