@@ -79,6 +79,7 @@
   /* The toolbar on the view, as in the understanding graph: each control opens its choices below it. */
   .side { position: fixed; top: 94px; right: 30px; z-index: 4; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; max-width: calc(100vw - 60px); pointer-events: none; }
   .side > * { pointer-events: auto; }
+  .side [hidden], .toggle[hidden] { display: none !important; }
   .side .legend { position: static; }
   .tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: min(980px, calc(100vw - 60px)); }
   .tool-wrap { position: relative; }
@@ -158,12 +159,13 @@
     <span class="tool-wrap"><button class="tool" data-pop="pop-camera"><i>Camera</i> <b id="t-camera">Spinning</b><span class="caret">▾</span></button>
       <div class="pop" id="pop-camera" hidden><h2>Camera</h2><div class="seg" id="cameras"><button data-camera="spin">Spinning</button><button data-camera="free">Free</button><button data-camera="locked">Locked</button></div><div class="note" id="camera-note"></div></div></span>
     <button class="tool switch" id="shine" aria-pressed="true" title="Switch between the shining look and a less shining one (G)">Shining</button>
+    <button class="tool switch" id="edges" aria-pressed="true" title="Show or hide the lines that link one thing to another: thoughts to their moments, documents to each other, causal links, the tree (K)">Edges</button>
     <span class="tool-wrap"><button class="tool" data-pop="pop-details"><i>Details</i><span class="caret">▾</span></button>
       <div class="pop wide" id="pop-details" hidden>
         <section id="show-section"><h2>Show <button id="all">All</button></h2><div id="kinds"></div></section>
         <section id="depth-section"><h2>Depth of the tree</h2><div class="seg" id="depths"></div><div class="note" id="depth-note"></div></section>
         <section id="lenses-section"><h2>Lenses <button id="lenses-all">All</button></h2><div id="lenses"></div></section>
-        <section class="keys-help"><b>W</b> <b>A</b> <b>S</b> <b>D</b> walk · <b>Q</b> <b>E</b> down and up · arrows look around · <b>Shift</b> faster · <b>1</b>–<b>4</b> the scales · <b>T</b> processes · <b>L</b> tree · <b>R</b> terrain · <b>Space</b> play · <b>C</b> the camera · <b>G</b> shining · <b>X</b> everything. Locked: scroll or pinch zooms in time, drag pans, <b>Shift</b>+scroll moves a tall view up and down. Otherwise drag turns, right-drag moves, scroll comes closer, <b>Shift</b>+scroll zooms in time. Click anything to read what it is.</section>
+        <section class="keys-help"><b>W</b> <b>A</b> <b>S</b> <b>D</b> walk · <b>Q</b> <b>E</b> down and up · arrows look around · <b>Shift</b> faster · <b>1</b>–<b>4</b> the scales · <b>T</b> processes · <b>L</b> tree · <b>R</b> terrain · <b>Space</b> play · <b>C</b> the camera · <b>G</b> shining · <b>K</b> edges · <b>X</b> everything. Locked: scroll or pinch zooms in time, drag pans, <b>Shift</b>+scroll moves a tall view up and down. Otherwise drag turns, right-drag moves, scroll comes closer, <b>Shift</b>+scroll zooms in time. Click anything to read what it is.</section>
       </div></span>
     <button class="tool switch" id="everything" aria-pressed="false" title="Show every kind of record, every lens and the whole tree (X)">Show everything</button>
   </div>

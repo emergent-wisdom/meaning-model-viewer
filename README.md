@@ -17,6 +17,9 @@ anything in the view to read what it is, and click it to keep that open beside t
   is under the pointer (scroll) and walk through it with the keys yourself; or *Locked*, a steady framing from the front in which scrolling or pinching zooms in time and
   dragging pans, and a view taller than the window moves up and down (shift and scroll, or the arrow keys).
 - **Shining** or **Less shining**: the full glare of the stage, or a quieter look without the haze.
+- **Edges**: the lines that link one thing to another (the thoughts' threads to their moments, the links between
+  documents, the causal links, the tree's connectors), shown or hidden when they distract; a document pointed at still
+  shows its own.
 - **Show everything**: every kind of record, every lens and the whole tree at once; pressed again, the view as the
   stage showed it.
 - **Play.** *The story's years*, as history plays forward: the curtains draw on, and the events, decisions, readings
@@ -34,7 +37,9 @@ anything in the view to read what it is, and click it to keep that open beside t
   moments within them, with every process at the level of what holds it. *Terrain* shows every function of the model
   as one terrain, as the landscape showed it: each life with its periods as plateaus and its shocks as peaks, the
   processes it runs through, what each person wants, feels and expects, and the world's long developments behind them,
-  with Events as beams, decisions as diamonds and the agent's notes and prose above.
+  with Events as beams, decisions as diamonds and the agent's notes and prose above. On the terrain, Details adds or
+  takes away the named processes (as ridges of their own), the events, the decisions, the causal links and the
+  thoughts.
 - **Depth** sets how far down the tree the view goes, and **Show** adds or takes away each kind of record: the named
   processes, the events that move them, decisions, love or fear, causal links, the agent's thoughts, the tree of
   Events, the subsidiary processes (each life's slow processes, the change arcs and their phases), and the prose part
@@ -44,7 +49,7 @@ anything in the view to read what it is, and click it to keep that open beside t
 
 Keys: `W` `A` `S` `D` walk through the view, `Q` and `E` go down and up, the arrows look around and `Shift` goes faster
 (the first step stops the spin; locked, `A` and `D` move through time and `W` and `S` zoom it); `1`–`4` the scales,
-`T` processes, `L` tree, `R` terrain, `Space` play, `C` the camera, `G` shining, `X` everything.
+`T` processes, `L` tree, `R` terrain, `Space` play, `C` the camera, `G` shining, `K` edges, `X` everything.
 
 The view was made for [*Twelve Words*](https://github.com/emergent-wisdom/story), the novel an agent wrote live
 with the Meaning Model at the Stockholm Claude Community event of 25 September 2026. That repo holds its run, the book
@@ -156,7 +161,7 @@ copied as it is. Each option is left out while it is as the stage showed it:
 | Option | Values |
 | --- | --- |
 | `camera` | `spin` (the default), `free` or `locked`; `pose=x,y,z,tx,ty,tz` keeps a free camera's place |
-| `glare` | `full` (shining, the default) or `soft` (less shining) |
+| `glare` | `full` (shining, the default) or `soft` (less shining); `edges=off` hides the lines that link things |
 | `mode` | `story` (the default) or `construction`; `speed=0.25`, `0.5`, `1`, `2` or `4`; `at=` the play's position, a year or an ISO time |
 | `zoom` | `story` (the default), `life` (with `life=<first name>`), `centuries` or `world`; or `t0=` and `t1=` in years, or `focus=<event id>` |
 | `view` | `together` (the processes, the default), `layers` (the tree) or `terrain`; `depth=` 0 to 6 (2 by default) |

@@ -31,6 +31,7 @@ const ALL_SHOW = [...DEFAULT_SHOW, 'events', 'subsidiary', 'prose'];
 const opt = {
   camera: ['spin', 'free', 'locked'].includes(params.get('camera')) ? params.get('camera') : params.has('still') ? 'free' : 'spin',
   glare: params.get('glare') === 'soft' ? 'soft' : 'full',
+  edges: params.get('edges') !== 'off', // the lines that link one thing to another
   mode: params.get('mode') === 'construction' ? 'construction' : 'story',
   speed: [0.25, 0.5, 1, 2, 4].includes(Number(params.get('speed'))) ? Number(params.get('speed')) : 1,
   layout: ({ layers: 'layers', tree: 'layers', terrain: 'terrain' })[params.get('view')] ?? 'together',
@@ -521,7 +522,7 @@ function drawNotes() {
   mindLines.begin(); noteLinks.begin();
   const shown = new Set();
   for (const light of notes) {
-    if (!light.visible) continue; shown.add(light.userData.id); const on = lit === light;
+    if (!light.visible) continue; shown.add(light.userData.id); const on = lit === light; if (!opt.edges && !on) continue;
     for (const event of light.userData.moments) if (shownByPlay(event.start, bornAt(event))) for (const point of meet(event)) mindLines.add(light.position.x, light.position.y, light.position.z, point.x, point.y, point.z, light.userData.color, on ? 0.95 : 0.13);
     // Pointed at, a document also shows the people and processes it is attached to.
     if (on) for (const item of light.userData.attached) {
@@ -531,7 +532,7 @@ function drawNotes() {
     }
   }
   const edge = color('#c9d4ff');
-  for (const [a, b] of noteEdges) if (shown.has(a) && shown.has(b)) { const p = noteById.get(a).position; const q = noteById.get(b).position; noteLinks.add(p.x, p.y, p.z, q.x, q.y, q.z, edge, 0.16); }
+  if (opt.edges) for (const [a, b] of noteEdges) if (shown.has(a) && shown.has(b)) { const p = noteById.get(a).position; const q = noteById.get(b).position; noteLinks.add(p.x, p.y, p.z, q.x, q.y, q.z, edge, 0.16); }
   mindLines.end(); noteLinks.end();
 }
 
@@ -557,7 +558,7 @@ function eventPoint(event) {
 }
 let arcTargets = [];
 function drawArcs() {
-  arcsBuffer.begin(); let s = 0; arcTargets = []; const on = opt.show.has('causal'); laneTag.visible = false;
+  arcsBuffer.begin(); let s = 0; arcTargets = []; const on = opt.show.has('causal') && opt.edges; laneTag.visible = false;
   if (on) for (const relation of causalAll) {
     const source = byId.get(relation.source); const target = byId.get(relation.target);
     if (!inView(source.start, 0.05) || !inView(target.start, 0.05) || !seen(relation, Math.max(source.start, target.start))) continue;
@@ -629,7 +630,7 @@ function drawExtras() {
     if (wide <= 1.2) { extraGlows.add((a + b) / 2, top, p.z, tint.clone().lerp(WHITE, 0.4), (lit2 ? 1 : 0.95) * vis, wide <= 0.12 ? 15 : 11); if (live) extraTargets.push({ kind: sub ? 'sub' : 'event', node, wpt: [(a + b) / 2, top, p.z] }); }
     // The tree: a thread from each node up to the nearest shown node that holds it (in Layers).
     const parent = node.parent && node.inL ? nearestShown(node.parent) : null;
-    if (parent && m > 0.01) { const q = nodeAt(parent); const x = Math.max(x0, X(parent.t0)); const holds = lit2 && litChain.has(parent.id);
+    if (parent && m > 0.01 && opt.edges) { const q = nodeAt(parent); const x = Math.max(x0, X(parent.t0)); const holds = lit2 && litChain.has(parent.id);
       if ((x >= left && x <= right) || holds) connectors.add(clampX(x), top, p.z, clampX(x), q.y, q.z, holds ? WHITE : tint, (holds ? 0.85 : 0.16) * m, (holds ? 0.85 : 0.05) * m); }
   }
   // Lens readings: a small bar of each reading's answers over its record, one row per lens.
@@ -649,7 +650,7 @@ function drawExtras() {
     for (const unit of prose) {
       if (!shownByPlay(unit.t, bornAt(unit))) continue; const x = X(unit.t); if (x < left - 1 || x > right + 1) continue; const on = litUnit === unit;
       chips.quad(x - 0.35, x + 0.35, y, y + 0.9, y, y + 0.9, zz, c, on ? 0.9 : 0.55, on ? 0.9 : 0.55);
-      for (const tell of unit.tells ?? []) { const place = anchor(tell.eventId, byId.get(tell.eventId)?.start); if (place) proseLines.add(x, y, zz, place.x, place.y, place.z, c, on ? 0.9 : 0.16, on ? 0.7 : 0.05); }
+      if (opt.edges || on) for (const tell of unit.tells ?? []) { const place = anchor(tell.eventId, byId.get(tell.eventId)?.start); if (place) proseLines.add(x, y, zz, place.x, place.y, place.z, c, on ? 0.9 : 0.16, on ? 0.7 : 0.05); }
       extraTargets.push({ kind: 'prose', unit, wpt: [x, y + 0.45, zz], r: 14 });
     }
   }
@@ -718,6 +719,8 @@ const TS = LENGTH / 96; const TNX = 420; const TAMP = 8.5 * TS; const TROW = 2.1
 const TERRAIN_GLARE = { full: [0.95, 0.55, 0.12], soft: [0.3, 0.4, 0.35] };
 const shortName = (text, n = 40) => { const head = String(text ?? '').replace(/\s+/g, ' ').split(/[:;,]| from | since | built /)[0].trim(); if (head.length <= n) return head; const cut = head.slice(0, n - 1); const space = cut.lastIndexOf(' '); return `${space > n * 0.6 ? cut.slice(0, space) : cut}…`; };
 const hashOf = (text) => { let h = 2166136261; for (const c of String(text)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return ((h >>> 0) % 10000) / 10000; };
+const fieldRows = () => rows; // the processes' rows, for the terrain's named processes
+const TERRAIN_KINDS = new Set(['processes', 'threads', 'decisions', 'causal', 'notes']); // the details the terrain shows
 function buildTerrain() {
   terrain.built = true;
   const group = new THREE.Group(); group.visible = false; scene.add(group); terrain.group = group;
@@ -736,6 +739,13 @@ function buildTerrain() {
   const P = deep ? (t) => Math.min(1.02, 1 - Math.log10(1 + Math.max(0, present - t)) / uMax) : (t) => (t - domain[0]) / (domain[1] - domain[0]);
   const sigma = (domain[1] - domain[0]) / 160; const sigmaP = 1 / 170;
   const born = (items) => Math.min(...items.map((item) => (item?.at ? Date.parse(item.at) : Infinity)));
+  // The named processes (the curtains of the processes view) as ridges: each authored path on its own scale, fading in and
+  // out at its first and last value. They show with Details' named processes.
+  const namedRows = (person) => fieldRows().filter((row) => (person ? ownerOf(row.measure) === person : !ownerOf(row.measure))).map((row) => ({
+    id: `named:${row.measure.id}`, label: NAMES[row.measure.id], kind: 'named', amp: 0.8, born: bornAt(row.measure),
+    recipe: () => { const samples = new Float32Array(TNX); const first = row.measure.points[0].t; const last = row.measure.points.at(-1).t; const a = fracOf(F, first); const b = fracOf(F, last);
+      for (let i = 0; i < TNX; i += 1) { const q = terrain.ps[i]; const d = q < a ? a - q : q > b ? q - b : 0; const t = Math.max(first, Math.min(last, terrain.ts[i])); samples[i] = (row.height(t) / AMP) * Math.exp(-(d * d) / (2 * sigmaP * sigmaP)); }
+      return samples; } }));
   // A row's height at each sample comes from a recipe run over the samples of the years on screen.
   const rows = [];
   const plateau = (samples, start, end, height) => { if (!Number.isFinite(start)) return; const a = fracOf(F, start); const b = fracOf(F, Number.isFinite(end) ? end : start);
@@ -751,6 +761,7 @@ function buildTerrain() {
         for (const arc of person.arcs) { if (!Number.isFinite(arc.focal)) continue; const fall = Math.max((arc.adaptationEnd ?? arc.focal) - arc.focal, sigma * 2);
           for (let i = 0; i < TNX; i += 1) { const d = terrain.ts[i] - arc.focal; const v = d >= 0 ? Math.exp(-d / fall) : Math.exp(-(d * d) / (2 * sigma * sigma)); if (v > life[i]) life[i] = v; } }
         return life; } });
+    for (const row of namedRows(person)) rows.push({ ...row, group: owner, hue });
     for (const process of person.processes ?? []) {
       const ids = descendants(process.eventId); if (!ids.length) continue;
       rows.push({ id: process.eventId, label: clip(String(process.what ?? '').replace(/^.*?\bis\b\s*/i, ''), 34) || process.eventId.split('.').at(-1), group: owner, hue, kind: 'process', ids, born: born(ids.map((id) => byEvent.get(id)?.born)), recipe: () => density(ids) });
@@ -767,13 +778,14 @@ function buildTerrain() {
           return samples; } });
     }
   });
+  const worldNamed = namedRows(null);
   // The world's long developments: each Event outside the lives, long on the landscape's own axis, with what happens inside it.
   const owned = new Set(persons.flatMap((person) => [person.life?.eventId, ...person.periods.map((period) => period.eventId), ...person.arcs.map((arc) => arc.eventId), ...(person.processes ?? []).map((process) => process.eventId)]).filter(Boolean));
   const inLives = new Set(persons.flatMap((person) => (person.life ? [person.life.eventId, ...descendants(person.life.eventId)] : [])));
   const span = domain[1] - domain[0]; const world = { id: 'world', label: 'The world', hue: WORLD };
   const tops = events.filter((event) => !owned.has(event.id) && !inLives.has(event.id) && Number.isFinite(event.start) && Number.isFinite(event.end) && P(event.end) - P(event.start) > 0.02 && (event.end - event.start) < span * 3)
     .map((event) => ({ event, ids: [event.id, ...descendants(event.id)] })).sort((a, b) => (b.event.end - b.event.start) - (a.event.end - a.event.start)).slice(0, 12);
-  rows.unshift(...tops.map(({ event, ids }) => ({ id: event.id, label: clip(event.label, 34), name: shortName(event.label), group: world, hue: WORLD, kind: 'world', amp: 0.6, ids, born: born(ids.map((id) => byEvent.get(id)?.born)),
+  rows.unshift(...worldNamed.map((row) => ({ ...row, group: world, hue: WORLD })), ...tops.map(({ event, ids }) => ({ id: event.id, label: clip(event.label, 34), name: shortName(event.label), group: world, hue: WORLD, kind: 'world', amp: 0.6, ids, born: born(ids.map((id) => byEvent.get(id)?.born)),
     recipe: () => { const inside = ids.slice(1); const samples = inside.length ? density(inside, 0.2) : new Float32Array(TNX); for (let i = 0; i < TNX; i += 1) samples[i] *= 0.9; plateau(samples, event.start, event.end, 0.16); return samples; } })));
   let zz = 0; let last = null; for (const row of rows) { if (last && last !== row.group.id) zz += TGAP; row.z = zz; zz += TROW; last = row.group.id; }
   const depth = Math.max(zz - TROW, 1); for (const row of rows) { row.z -= depth / 2; row.scale = 1; row.target = 1; row.color = new THREE.Color(row.hue); }
@@ -793,7 +805,7 @@ function buildTerrain() {
     row.ridge.frustumCulled = false; row.ridge.userData.row = row; group.add(row.ridge);
   }
   // What the ridges are and what their height means, block by block on the right; whose they are on the left.
-  const SECTION = { life: ['life & shocks', 'plateaus are periods, peaks are shocks'], process: ['life processes', 'how much happens in each'], series: ['wants · feels · expects', 'share of the main answer'], world: ['long developments', 'how much happens inside each'] };
+  const SECTION = { named: ['named processes', 'each on its own scale, as the processes show them'], life: ['life & shocks', 'plateaus are periods, peaks are shocks'], process: ['life processes', 'how much happens in each'], series: ['wants · feels · expects', 'share of the main answer'], world: ['long developments', 'how much happens inside each'] };
   const sections = new Map(); for (const row of rows) { const key = `${row.group.id}|${row.kind}`; if (!sections.has(key)) sections.set(key, { kind: row.kind, zs: [] }); sections.get(key).zs.push(row.z); }
   terrain.sectionNames = [...sections.values()].map((section) => {
     const [name, meaning] = SECTION[section.kind] ?? [section.kind, '']; const element = document.createElement('div'); element.className = 'label section';
@@ -811,11 +823,12 @@ function buildTerrain() {
   // Events as beams of light on the ridge of the process or development they happen in, decisions as diamonds above each life.
   const rowOfEvent = new Map(); for (const row of rows) if (row.ids) for (const id of row.ids) if (!rowOfEvent.has(id)) rowOfEvent.set(id, row);
   const beamGeometry = new THREE.CylinderGeometry(0.035 * TS, 0.035 * TS, 1, 6); beamGeometry.translate(0, 0.5, 0);
-  terrain.beams = [];
+  terrain.beams = []; terrain.beamOf = new Map();
+  terrain.arcs = new Lines(); field.remove(terrain.arcs.object); group.add(terrain.arcs.object);
   for (const event of events) {
     const row = rowOfEvent.get(event.id); if (!row || !Number.isFinite(event.start)) continue; if (Number.isFinite(event.end) && P(event.end) - P(event.start) > 0.2) continue;
     const beam = new THREE.Mesh(beamGeometry, new THREE.MeshBasicMaterial({ color: row.color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
-    beam.scale.y = (0.8 + Math.min(4, (event.cuts ?? 0) * 0.9)) * TS; beam.userData = { event, row, t: event.start, born: bornAt(event) }; group.add(beam); terrain.beams.push(beam);
+    beam.scale.y = (0.8 + Math.min(4, (event.cuts ?? 0) * 0.9)) * TS; beam.userData = { event, row, t: event.start, born: bornAt(event) }; group.add(beam); terrain.beams.push(beam); terrain.beamOf.set(event.id, beam);
   }
   const gem = new THREE.OctahedronGeometry(0.42 * TS);
   for (const [order, person] of persons.entries()) {
@@ -876,11 +889,32 @@ function applyTerrain() {
   if (!terrain.built || !terrain.on) return;
   const construction = building(); const whole = construction || (atEnd && !playing);
   terrain.clip.constant = whole ? LENGTH : X(Math.max(F.a, Math.min(F.b, now)));
-  for (const row of terrain.rows) row.target = construction && row.born > tau ? 0 : 1;
-  for (const beam of terrain.beams) beam.visible = beam.userData.inWindow && shownByPlay(beam.userData.t, beam.userData.born);
-  let n = 0; const shown = new Set();
-  for (const point of terrain.mind) { point.visible = construction ? point.userData.born <= tau : whole || point.userData.t <= now; if (point.visible) shown.add(point); }
-  terrain.threads.geometry.setDrawRange(0, terrain.threadCount * 2); void n; void shown;
+  // Details choose here as in the processes: the named processes, the events, the decisions, the thoughts and the causal links.
+  for (const row of terrain.rows) row.target = (construction && row.born > tau) || (row.kind === 'named' && !opt.show.has('processes')) ? 0 : 1;
+  const events2 = opt.show.has('threads') || opt.show.has('events'); const thoughts = opt.show.has('notes');
+  for (const beam of terrain.beams) beam.visible = beam.userData.inWindow && shownByPlay(beam.userData.t, beam.userData.born) && (beam.userData.decision ? opt.show.has('decisions') : events2);
+  for (const point of terrain.mind) point.visible = thoughts && (construction ? point.userData.born <= tau : whole || point.userData.t <= now);
+  terrain.threads.geometry.setDrawRange(0, terrain.threadCount * 2); terrain.threads.visible = opt.edges && thoughts;
+  drawTerrainArcs();
+}
+// Causal links over the terrain: from the top of one event's beam to the other's, else from where the life it belongs to stands.
+function terrainPoint(event) {
+  const beam = terrain.beamOf.get(event.id); if (beam) return new THREE.Vector3(beam.position.x, beam.scale.y, beam.position.z);
+  const row = terrain.rows.find((item) => item.id === `${event.owner}:life`); if (!row?.samples) return null; const t = Math.max(F.a, Math.min(F.b, event.start));
+  const i = Math.max(0, Math.min(TNX - 1, Math.round(fracOf(F, t) * (TNX - 1)))); return new THREE.Vector3(X(t), row.samples[i] * row.scale * (row.amp ?? 1) * TAMP + 0.3, row.z);
+}
+let terrainArcTargets = [];
+function drawTerrainArcs() {
+  const buffer = terrain.arcs; buffer.begin(); terrainArcTargets = [];
+  if (opt.edges && opt.show.has('causal')) for (const relation of causalAll) {
+    const source = byId.get(relation.source); const target = byId.get(relation.target);
+    if (!inView(source.start, 0.05) || !inView(target.start, 0.05) || !seen(relation, Math.max(source.start, target.start))) continue;
+    const a = terrainPoint(source); const b = terrainPoint(target); if (!a || !b) continue; const lit4 = litArc?.relation === relation; const c = lit4 ? WHITE : color(KIND[relation.kind] ?? '#9a9a9a');
+    const mid = new THREE.Vector3((a.x + b.x) / 2, Math.max(a.y, b.y) + 2 * TS + Math.abs(b.x - a.x) * 0.1, (a.z + b.z) / 2); const pts = new THREE.QuadraticBezierCurve3(a, mid, b).getPoints(32);
+    for (let i = 1; i < pts.length; i += 1) buffer.add(pts[i - 1].x, pts[i - 1].y, pts[i - 1].z, pts[i].x, pts[i].y, pts[i].z, c, lit4 ? 1 : 0.75);
+    terrainArcTargets.push({ kind: 'arc', relation, source, target, pts: pts.filter((_, i) => i % 3 === 0 || i === pts.length - 1) });
+  }
+  buffer.end();
 }
 // Terrain labels that would cover the time marks, the panels or each other lift a little; the rest wait for the pointer.
 function declutterTerrain() {
@@ -914,7 +948,8 @@ function showTerrain(on) {
   renderer.toneMapping = on ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping; renderer.toneMappingExposure = on ? 1.05 : 1;
   applyShine();
   if (opt.camera !== 'locked') { camera.fov = on ? 42 : 40; scene.fog.density = on ? TFOG : FOG; camera.updateProjectionMatrix(); }
-  for (const id of ['depth-section', 'show-section', 'lenses-section']) document.getElementById(id).hidden = on || (id === 'lenses-section' && !lensList.length) || (id === 'depth-section' && !hasTree);
+  for (const id of ['depth-section', 'lenses-section']) document.getElementById(id).hidden = on || (id === 'lenses-section' && !lensList.length) || (id === 'depth-section' && !hasTree);
+  for (const row of document.querySelectorAll('#kinds .toggle')) row.hidden = on && !TERRAIN_KINDS.has(row.dataset.key);
   if (!on) highlightRow(null); tip.hidden = true; statsShown = null; hud(); relayout = true; dirty = true;
 }
 // Hover on the terrain: what a beam, diamond or light is, else the ridge under the pointer and its time; that ridge stands out.
@@ -927,6 +962,10 @@ function highlightRow(row) {
 function hoverTerrain() {
   if (!pointerAt) { highlightRow(null); hoveredAt = null; return; }
   if (hoveredAt && hoveredAt.x === pointerAt.x && hoveredAt.y === pointerAt.y) return; hoveredAt = { ...pointerAt };
+  // A causal link under the pointer first, as in the processes.
+  let arc = null; let bestArc = 8; for (const target of terrainArcTargets) for (let i = 1; i < target.pts.length; i += 1) { const a = screen(target.pts[i - 1].x, target.pts[i - 1].y, target.pts[i - 1].z); const b = screen(target.pts[i].x, target.pts[i].y, target.pts[i].z); if (!a.ok || !b.ok) continue; const d = distToSeg(pointerAt, a, b); if (d < bestArc) { bestArc = d; arc = target; } }
+  if (arc !== litArc) { litArc = arc; drawTerrainArcs(); }
+  if (arc) { highlightRow(null); renderer.domElement.style.cursor = 'help'; tip.replaceChildren(...arcLines(arc).map(([cls, text]) => tipLine(cls, text))); placeTip(); return; }
   ndc.set((pointerAt.x / innerWidth) * 2 - 1, -(pointerAt.y / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
   const lines = []; let row = null;
   const hit = ray.intersectObjects([...terrain.beams, ...terrain.mind].filter((item) => item.visible), false)[0];
@@ -1337,6 +1376,9 @@ function applyShine() {
 }
 const setShine = (glare) => { opt.glare = glare; applyShine(); syncPanel(); syncURL(); };
 document.getElementById('shine').addEventListener('click', () => setShine(opt.glare === 'full' ? 'soft' : 'full'));
+// Edges: the lines that link one thing to another, shown or hidden.
+function setEdges(on) { opt.edges = on; dirty = true; extrasDirty = true; syncPanel(); syncURL(); }
+document.getElementById('edges').addEventListener('click', () => setEdges(!opt.edges));
 // Everything: every kind of record, every lens and the whole tree; pressed again, the view as the stage showed it.
 const isEverything = () => KINDS.every(([key, , , count]) => !count() || opt.show.has(key)) && opt.lenses.size === lensList.length && opt.depth >= MAX_DEPTH;
 function setEverything(on) {
@@ -1384,6 +1426,7 @@ function syncPanel() {
   setText('mode-note', building() ? 'The model and the story graph as the agent built them, step by step, with its own reasons as captions.' : 'History plays forward: the processes draw on, and events, decisions and thoughts arrive as their moments come.');
   const shine = document.getElementById('shine'); shine.setAttribute('aria-pressed', String(opt.glare === 'full')); setText('shine', opt.glare === 'full' ? 'Shining' : 'Less shining');
   document.getElementById('everything').setAttribute('aria-pressed', String(isEverything()));
+  document.getElementById('edges').setAttribute('aria-pressed', String(opt.edges)); setText('edges', opt.edges ? 'Edges' : 'No edges');
   on('#cameras button', 'camera', opt.camera); on('#modes button', 'mode', opt.mode); on('#speeds button', 'speed', opt.speed); on('#layouts button', 'layout', opt.layout);
   for (const button of document.querySelectorAll('#presets button')) button.classList.toggle('on', button.dataset.preset === currentPreset);
   const life = document.querySelector('#presets [data-preset="life"]'); if (life) life.textContent = currentPreset === 'life' ? lifeName : 'A life';
@@ -1403,6 +1446,7 @@ addEventListener('keydown', (event) => {
   if (event.key === 'c' || event.key === 'C') setCamera({ spin: 'free', free: 'locked', locked: 'spin' }[opt.camera]);
   if (event.key === 'g' || event.key === 'G') setShine(opt.glare === 'full' ? 'soft' : 'full');
   if (event.key === 'x' || event.key === 'X') setEverything(!isEverything());
+  if (event.key === 'k' || event.key === 'K') setEdges(!opt.edges);
   if (event.key === ' ' && !event.target.closest?.('button')) { event.preventDefault(); if (playing) stop(); else play(); }
   if (event.key === '+' || event.key === '=') zoomAt(innerWidth / 2, innerHeight / 2, 1.6); if (event.key === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.6);
   if (opt.camera === 'locked' && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) { event.preventDefault(); scrollLocked(event.key === 'ArrowDown' ? 120 : -120); }
@@ -1414,7 +1458,7 @@ function syncURL() {
   if (!ready) return; clearTimeout(urlTimer);
   urlTimer = setTimeout(() => {
     const next = new URLSearchParams(); for (const key of ['data', 'title', 'live', 'capture']) if (params.has(key)) next.set(key, params.get(key));
-    if (opt.camera !== 'spin') next.set('camera', opt.camera); if (opt.glare !== 'full') next.set('glare', opt.glare);
+    if (opt.camera !== 'spin') next.set('camera', opt.camera); if (opt.glare !== 'full') next.set('glare', opt.glare); if (!opt.edges) next.set('edges', 'off');
     if (opt.mode !== 'story') next.set('mode', opt.mode); if (opt.speed !== 1) next.set('speed', String(opt.speed));
     if (currentPreset && currentPreset !== 'story') { next.set('zoom', currentPreset); if (currentPreset === 'life' && lives.length) next.set('life', lives[lifeTurn % lives.length].name.toLowerCase()); }
     else if (!currentPreset) { const digits = Math.max(0, Math.min(6, Math.ceil(-Math.log10(F.s)) + 3)); next.set('t0', F.a.toFixed(digits)); next.set('t1', F.b.toFixed(digits)); }
