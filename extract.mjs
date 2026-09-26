@@ -1,38 +1,59 @@
-// Turns a Meaning Model story run into one data file for the stage view.
+// Turns a Meaning Model run into one data file for the viewer.
 //
-//   node extract.mjs --run <run folder containing novel/> --out data/<name>.json [--title "..."]
-//   node extract.mjs --static <model.json> <narrative-graph.json> --out data/<name>.json [--title "..."]
+//   node extract.mjs --run <run folder> --out <file.json> [--title "..."] [--config viewer.json] [--log earlier.jsonl ...]
+//   node extract.mjs --static <model.json> <narrative-graph.json> --out <file.json> [--title "..."]
 //
-// Relay mode reads the run's relay call log (never the agent's transcript) and never calls the run's own server: it
-// takes an online SQLite backup of the run's engine database, opens that snapshot with a private engine, and exports
-// the story graph's construction (every model revision it was bound to, every graph revision as a change) in process.
-// Each record's birth is the first revision that holds it; each revision's time is the first logged call whose result
-// names its hash.
+// A run folder (format meaning-model-run/1, described in the README) holds the relay's call log, mcp-transcript.jsonl,
+// and the engine's SQLite state, in the folder itself or in its novel/ folder. The extractor reads the call log (never
+// the agent's transcript) and never calls the run's own server: it takes an online SQLite backup of the engine state,
+// opens that snapshot with a private engine, and exports the story graph's construction (every model revision it was
+// bound to, every graph revision as a change) in process. It writes nothing into the run. Each record's birth is the
+// first revision that holds it; each revision's time is the first logged call whose result names its hash.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { readPath } from './measures.mjs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
-// The Meaning Model: a checkout or the installed npm package (@emergent-wisdom/meaning-model-mcp), with its engine.
-const PUBLISH = resolve(process.env.MEANING_MODEL_DIR ?? 'node_modules/@emergent-wisdom/meaning-model-mcp');
-const ENGINE = process.env.LIFE_SIM_ENGINE_BIN ?? `${PUBLISH}/rust-engine/target/release/life-sim-engine`;
+// The Meaning Model: a checkout (MEANING_MODEL_DIR) or the installed package (@emergent-wisdom/meaning-model-mcp), which
+// finds its own engine unless LIFE_SIM_ENGINE_BIN names one.
+const PUBLISH = process.env.MEANING_MODEL_DIR ? resolve(process.env.MEANING_MODEL_DIR)
+  : (() => { try { return dirname(createRequire(import.meta.url).resolve('@emergent-wisdom/meaning-model-mcp/package.json')); } catch { return resolve('node_modules/@emergent-wisdom/meaning-model-mcp'); } })();
 const MQ = `${PUBLISH}/mcp-server/src/model-questions.mjs`;
 const { indexModel, modeledPeople, readPerson, cutKind, eventDescendants } = await import(MQ);
+const meaningModelVersion = ['package.json', 'mcp-server/package.json'].map((file) => { try { return JSON.parse(readFileSync(join(PUBLISH, file), 'utf8')).version; } catch { return null; } }).find(Boolean) ?? null;
 
 const argv = process.argv.slice(2);
 const flag = (name) => { const index = argv.indexOf(name); return index >= 0 ? argv[index + 1] : null; };
-const out = flag('--out') ?? 'public/data/story.json';
+const flags = (name) => argv.flatMap((value, index) => (value === name && argv[index + 1] ? [argv[index + 1]] : []));
+const out = flag('--out') ?? 'data/run.json';
 const HASH = /\b[0-9a-f]{64}\b/g;
 const parseBody = (result) => { try { return JSON.parse(result?.content?.[0]?.text ?? 'null'); } catch { return null; } };
+const readLog = (file) => readFileSync(file, 'utf8').trim().split('\n').map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+// Where a run keeps its call log and its engine state: the folder itself or its novel/ folder.
+export const RUN_FORMAT = 'meaning-model-run/1';
+function runFiles(folder) {
+  const at = [join(folder, 'novel'), folder].find((dir) => existsSync(join(dir, 'mcp-transcript.jsonl')));
+  if (!at) throw new Error(`${folder} is not a run folder (${RUN_FORMAT}): it has no mcp-transcript.jsonl, in itself or in novel/.`);
+  const sqlite = readdirSync(at).filter((file) => file.endsWith('.sqlite'));
+  const state = flag('--state') ? resolve(flag('--state')) : ['engine-state.sqlite', 'story-state.sqlite'].map((file) => join(at, file)).find(existsSync) ?? (sqlite.length === 1 ? join(at, sqlite[0]) : null);
+  if (!state) throw new Error(`${at} holds ${sqlite.length ? `${sqlite.length} SQLite files` : 'no SQLite file'}: name the engine state with --state <file>.`);
+  return { dir: at, log: join(at, 'mcp-transcript.jsonl'), state, inputs: join(at, 'inputs') };
+}
+// A run's name: its folder's, or with its parent's when the folder has a generic name such as work or novel.
+const nameOfRun = (folder) => { const name = basename(folder); return /^(work|novel|run|story|state)$/i.test(name) ? `${basename(dirname(folder))}-${name}` : name; };
 
 // ---- sources -----------------------------------------------------------------------------------------------------
-let calls = []; let history = null; let staticModel = null; let staticGraph = null; let runName = null; let rendered = null;
+let calls = []; let history = null; let staticModel = null; let staticGraph = null; let runName = null; let rendered = null; let display = null;
 if (flag('--run')) {
   const run = resolve(flag('--run'));
-  const novel = existsSync(join(run, 'novel')) ? join(run, 'novel') : run;
-  runName = run.split('/').filter(Boolean).at(-1);
-  const log = readFileSync(join(novel, 'mcp-transcript.jsonl'), 'utf8').trim().split('\n').map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+  const files = runFiles(run);
+  runName = flag('--name') ?? nameOfRun(run);
+  // How the run wants to be shown, if it says: names for its processes and links (viewer.json beside it, or --config).
+  const configFile = flag('--config') ? resolve(flag('--config')) : [join(run, 'viewer.json'), join(files.dir, 'viewer.json')].find(existsSync);
+  if (configFile) display = JSON.parse(readFileSync(configFile, 'utf8'));
+  // Earlier logs (--log) come first: a fork's own log does not hold the calls that built what it was forked from.
+  const log = [...flags('--log').map((file) => readLog(resolve(file))).flat(), ...readLog(files.log)];
   calls = log.filter((entry) => entry.command?.op === 'call' && entry.event === 'result');
   // The story graph's head: the newest graph a write produced.
   let head = flag('--graph');
@@ -40,7 +61,7 @@ if (flag('--run')) {
   const scopes = new Set((flag('--scopes') ?? '').split(',').filter(Boolean));
   const collect = (text) => { for (const match of text.matchAll(/"access_?[sS]copes"\s*:\s*\[([^\]]*)\]/g)) for (const scope of match[1].matchAll(/"([^"]+)"/g)) scopes.add(scope[1]); };
   for (const entry of calls) collect(JSON.stringify(entry.result ?? {}));
-  const inputs = join(novel, 'inputs');
+  const inputs = files.inputs;
   if (existsSync(inputs)) for (const name of readdirSync(inputs).filter((file) => file.endsWith('.json'))) { try { collect(readFileSync(join(inputs, name), 'utf8')); } catch { /* unreadable input */ } }
   if (!head) {
     for (const entry of [...calls].reverse()) {
@@ -51,10 +72,9 @@ if (flag('--run')) {
   }
   if (!head) throw new Error('No story graph has been written in this run yet.');
   // A consistent snapshot of the live database, opened by a private engine: the run's own server is never called.
-  const snapshot = join(tmpdir(), `meaning-model-viz-${process.pid}.sqlite`);
-  { const { DatabaseSync, backup } = await import('node:sqlite'); const source = new DatabaseSync(join(novel, 'engine-state.sqlite'), { readOnly: true }); await backup(source, snapshot); source.close(); }
+  const snapshot = join(tmpdir(), `meaning-model-viewer-${process.pid}.sqlite`);
+  { const { DatabaseSync, backup } = await import('node:sqlite'); const source = new DatabaseSync(files.state, { readOnly: true }); await backup(source, snapshot); source.close(); }
   process.env.LIFE_SIM_STATE_FILE = snapshot;
-  process.env.LIFE_SIM_ENGINE_BIN = ENGINE;
   const { LifeSimulationService } = await import(`${PUBLISH}/mcp-server/src/service.mjs`);
   const { exportConstructionHistory } = await import(`${PUBLISH}/mcp-server/src/construction-record.mjs`);
   const service = new LifeSimulationService();
@@ -149,6 +169,39 @@ const birthOf = (collection, id) => born.get(`${collection}:${id}`) ?? null;
 const start = (event) => event?.interval?.start ?? null;
 const end = (event) => event?.interval?.end ?? null;
 const clip = (text, length) => { const value = String(text ?? '').replace(/\s+/g, ' ').trim(); return value.length > length ? `${value.slice(0, length - 1)}…` : value; };
+const parentOf = (id) => [...(index.parents.get(id) ?? [])][0] ?? null;
+
+// ---- contexts: whose record each Event is ----------------------------------------------------------------------------------
+// Every Event is governed by the nearest declared context root above it, found through containment and never from a
+// field of its own: the accepted world, a person's inner process, or a holder's understanding (and any other kind a
+// model declares). A model that declares no roots holds everything as world. A reading is an Event under an
+// understanding root, or one the lens placement made beneath its holder; it is about the record it reads (an about
+// relation) and never a part of the world. Models before placement (Meaning Model 0.3.0) keep lens readings on the
+// records they read.
+const rootKinds = new Map((mm.context_roots ?? []).map((root) => [root.event_id, root.kind]));
+const contextOf = (id) => {
+  for (let at = id, hops = 0; at && hops < 256; at = parentOf(at), hops += 1) if (rootKinds.has(at)) return { kind: rootKinds.get(at), root: at };
+  return { kind: rootKinds.size ? 'unrooted' : 'accepted_world', root: null };
+};
+const isAboutRelation = (relation) => relation.kind === 'about' || (relation.kind === 'other' && /^about\b/i.test(String(relation.description ?? '')));
+const aboutOf = new Map();
+for (const relation of mm.event_relations ?? []) if (isAboutRelation(relation)) { if (!aboutOf.has(relation.source_event_id)) aboutOf.set(relation.source_event_id, []); aboutOf.get(relation.source_event_id).push(relation.target_event_id); }
+// Whose a root is: a person's inner root is theirs; an understanding root names its holder.
+const rootHolder = (rootId) => {
+  if (!rootId) return null; const kind = rootKinds.get(rootId); const event = index.events.get(rootId);
+  if (kind === 'inner') return [event?.participants?.subject].flat()[0] ?? null;
+  if (kind === 'understanding') return String(event?.boundary ?? '').match(/^What (.+?) understands\b/)?.[1] ?? rootId.replace(/^understanding\./, '');
+  return null;
+};
+const placedByLens = (event) => (event?.provenance ?? []).some((item) => /lens placement/i.test(String(item)));
+const readingEvents = new Map();
+for (const event of mm.events ?? []) {
+  const context = contextOf(event.id);
+  const isReading = (context.kind === 'understanding' && !rootKinds.has(event.id)) || (placedByLens(event) && /^(reading|inner)\./.test(event.id) && !rootKinds.has(event.id));
+  if (!isReading) continue;
+  const perspective = context.kind === 'inner' ? (event.id.startsWith('inner.') ? 'actor' : 'reader') : 'modeler';
+  readingEvents.set(event.id, { id: event.id, about: aboutOf.get(event.id) ?? [], context: context.kind, root: context.root, holder: rootHolder(context.root), perspective });
+}
 
 // ---- people --------------------------------------------------------------------------------------------------------------
 const nameOf = (referent) => {
@@ -171,7 +224,7 @@ const people = listed.map((person, order) => {
   const series = new Map();
   for (const item of read.cuts) {
     const kind = cutKind(item.cut);
-    if (kind === 'decision' || start(item.event) === null) continue;
+    if (kind === 'decision' || start(item.event) === null || String(item.cut.id).startsWith('lens.') || readingEvents.has(item.event.id)) continue;
     const key = `${kind}|${String(item.cut.question ?? '').toLowerCase().trim()}|${item.cut.unit ?? ''}`;
     if (!series.has(key)) series.set(key, { kind, question: String(item.cut.question ?? item.cut.id), unit: item.cut.unit ?? '', points: [] });
     series.get(key).points.push({ t: toYear(start(item.event)), end: toYear(end(item.event)), eventId: item.event.id, cutId: item.cut.id,
@@ -201,7 +254,6 @@ const people = listed.map((person, order) => {
 const lifeEvents = new Set(people.map((person) => person.life?.eventId).filter(Boolean));
 const periodEvents = new Set(people.flatMap((person) => person.periods.map((period) => period.eventId)));
 const arcEvents = new Set([...index.arcsOf.values()].flat().flatMap((id) => [id, ...eventDescendants(index, id)]));
-const parentOf = (id) => [...(index.parents.get(id) ?? [])][0] ?? null;
 const events = (mm.events ?? []).map((event) => {
   const span = start(event) !== null && end(event) !== null ? end(event) - start(event) : null;
   const participants = [...new Set(Object.values(event.participants ?? {}).flat().map(String))];
@@ -209,9 +261,12 @@ const events = (mm.events ?? []).map((event) => {
     : (index.cutsByEvent.get(event.id) ?? []).some((cut) => cutKind(cut) === 'decision') ? 'decision' : 'event';
   return { id: event.id, label: clip(event.boundary ?? event.id, 90), description: clip(event.description, 360), start: toYear(start(event)), end: toYear(end(event)),
     span: span === null ? null : toYear(end(event)) - toYear(start(event)), parent: parentOf(event.id), region: event.region ?? null, participants, kind,
-    cuts: (index.cutsByEvent.get(event.id) ?? []).length, processIds: event.process_ids ?? [], born: birthOf('events', event.id) };
+    cuts: (index.cutsByEvent.get(event.id) ?? []).length, processIds: event.process_ids ?? [], born: birthOf('events', event.id),
+    context: contextOf(event.id).kind, ...(rootKinds.has(event.id) ? { root: rootKinds.get(event.id) } : {}),
+    ...(readingEvents.has(event.id) ? { reading: { about: readingEvents.get(event.id).about, holder: readingEvents.get(event.id).holder, perspective: readingEvents.get(event.id).perspective } } : {}) };
 });
-const relations = (mm.event_relations ?? []).filter((relation) => relation.kind !== 'contains').map((relation) => ({
+// Causal and other links between Events; containment is the tree, and about is a reading's reference to its record.
+const relations = (mm.event_relations ?? []).filter((relation) => relation.kind !== 'contains' && !isAboutRelation(relation)).map((relation) => ({
   source: relation.source_event_id, target: relation.target_event_id, kind: relation.kind,
   born: birthOf('relations', relation.id ?? `${relation.source_event_id}>${relation.kind}>${relation.target_event_id}`) }));
 
@@ -314,7 +369,11 @@ const reachOf = (id) => {
 for (const event of events) {
   const depth = depthOf.get(event.id) ?? 0; const span = event.span;
   event.depth = depth; event.owner = ownerOf(event.id);
-  event.role = depth === 0 ? 'world' : lifeOf.has(event.id) ? 'life' : innerRoots.has(event.id) ? 'inner' : /\.is\.[a-z]+$/.test(event.id) ? 'slow' : arcIds.has(event.id) ? 'arc'
+  // Readings, and any context that is not the world or a person's inner process (a holder's understanding, a document, a
+  // candidate), are not parts of the world's tree.
+  const foreign = !['accepted_world', 'inner', 'unrooted'].includes(event.context);
+  event.role = readingEvents.has(event.id) ? 'reading' : foreign ? event.root ?? event.context
+    : depth === 0 ? 'world' : lifeOf.has(event.id) ? 'life' : innerRoots.has(event.id) ? 'inner' : /\.is\.[a-z]+$/.test(event.id) ? 'slow' : arcIds.has(event.id) ? 'arc'
     : phaseOf(event.id) ? 'phase' : periodEvents.has(event.id) ? 'period' : depth === 1 ? 'development' : span !== null && span > 1 ? 'part' : 'moment';
   if (event.role === 'phase') event.phase = phaseOf(event.id);
   let span2 = reachOf(event.id);
@@ -362,7 +421,8 @@ const lensList = await (async () => {
   try { const { readLenses } = await import(`${PUBLISH}/mcp-server/src/lenses.mjs`); return readLenses(graphView); } catch { /* a release without lenses */ }
   const found = []; for (const node of graphView.nodes) { if (node.node_type !== 'understanding.lens') continue; try { const data = JSON.parse(node.text)?.data; if (data?.schema === 'meaning-model-lens/v1') found.push({ nodeId: node.id, data }); } catch { /* not a lens */ } }
   const superseded = new Set(graphView.edges.filter((edge) => edge.relation === 'supersedes' && edge.target?.kind === 'node').map((edge) => edge.target.node_id));
-  const defined = found.filter((node) => !superseded.has(node.nodeId)).map((node) => ({ ...node.data, nodeId: node.nodeId, builtIn: false, version: found.filter((other) => other.data.id === node.data.id).length }));
+  const defined = found.filter((node) => !superseded.has(node.nodeId)).map((node) => ({ ...node.data, nodeId: node.nodeId, builtIn: false, holder: graphView.nodes.find((item) => item.id === node.nodeId)?.holder ?? null,
+    version: found.filter((other) => other.data.id === node.data.id).length }));
   const builtIn = { id: 'fear-love', name: 'Fear or love', builtIn: true, appliesTo: ['act'], answers: null, matchesQuestion: /\bfear\b[^?]*\blove\b|\blove\b[^?]*\bfear\b/iu,
     question: 'What kinds of reasons lie behind {subject}: is it primarily out of fear or out of love, and what does that fear or love ask of the person?',
     why: 'The same act can come from fear or from love, and what it does to the person and to the people around them depends on which.',
@@ -370,18 +430,27 @@ const lensList = await (async () => {
   return [...(defined.some((lens) => lens.id === 'fear-love') ? [] : [builtIn]), ...defined];
 })();
 const liveCuts = allCuts.filter((cut) => !cut.withdrawn);
+// A reading's record: what its reading Event is about, or, before placement, the Event it sits on.
+const recordOf = (cut) => readingEvents.get(cut.parent_event_id)?.about[0] ?? cut.parent_event_id;
 const lenses = lensList.map((lens) => {
-  const own = liveCuts.filter((cut) => String(cut.id).startsWith(`lens.${lens.id}.`)); const answered = new Set(own.map((cut) => cut.parent_event_id));
-  const older = lens.matchesQuestion ? liveCuts.filter((cut) => !String(cut.id).startsWith('lens.') && lens.matchesQuestion.test(String(cut.question ?? '')) && !answered.has(cut.parent_event_id)) : [];
+  const own = liveCuts.filter((cut) => String(cut.id).startsWith(`lens.${lens.id}.`)); const answered = new Set(own.map(recordOf));
+  // Cuts that asked the built-in lens in their own words, before lenses had ids: shown, but whose reading they are is not
+  // stated, and a decision's Cut (continuations and their weights) is never a reading.
+  const older = lens.matchesQuestion ? liveCuts.filter((cut) => !String(cut.id).startsWith('lens.') && lens.matchesQuestion.test(String(cut.question ?? '')) && !answered.has(cut.parent_event_id)
+    && cutKind(cut) !== 'decision' && !drawOf.has(cut.id)) : [];
   const keys = lens.answers ? new Set([...lens.answers.map((answer) => answer.key), 'remainder']) : null;
   const readings = [...own, ...older].map((cut) => {
-    const provenance = (cut.provenance ?? []).join(' ; ');
-    return { cutId: cut.id, eventId: cut.parent_event_id, t: toYear(start(index.events.get(cut.parent_event_id))), question: clip(cut.question, 220),
+    const provenance = (cut.provenance ?? []).join(' ; '); const placed = readingEvents.get(cut.parent_event_id) ?? null; const record = recordOf(cut);
+    return { cutId: cut.id, eventId: record, t: toYear(start(index.events.get(record))), question: clip(cut.question, 220), unit: cut.unit ?? null,
       answers: (cut.answers ?? []).slice().sort((a, b) => b.weight - a.weight).map((answer) => ({ key: answer.key, weight: +answer.weight.toFixed(4) })),
+      // Whose reading it is: the holder it sits beneath, else (before placement) the lens's holder; unknown for older Cuts.
+      holder: placed ? placed.holder : own.includes(cut) ? lens.holder ?? null : null, perspective: placed ? placed.perspective : own.includes(cut) ? 'modeler' : null,
+      placed: Boolean(placed), ...(placed ? { readingEventId: placed.id, context: placed.context } : {}),
       ...(own.includes(cut) ? {} : { older: true }), ...(keys && (cut.answers ?? []).some((answer) => !keys.has(answer.key)) ? { earlier: true } : {}),
-      confidence: Number(provenance.match(/confidence ([\d.]+)/)?.[1] ?? NaN) || null, estimated: /^estimator:/.test(provenance), born: birthOf('cuts', cut.id) };
+      confidence: Number(provenance.match(/confidence ([\d.]+)/)?.[1] ?? NaN) || null, estimated: /^estimator:/.test(provenance), provenance: clip(provenance, 300), born: birthOf('cuts', cut.id) };
   }).sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity));
   return { id: lens.id, name: lens.name ?? lens.id, question: lens.question ?? null, appliesTo: lens.appliesTo ?? [], answers: lens.answers ?? null, why: clip(lens.why, 900) || null,
+    holder: lens.holder ?? null, perspective: lens.perspective ?? 'modeler',
     source: clip(lens.source, 400) || null, trajectory: clip(lens.trajectory, 400) || null, builtIn: Boolean(lens.builtIn), nodeId: lens.nodeId ?? null, version: lens.version ?? 1,
     about: (lens.about ?? []).map((target) => target.id), readings };
 }).filter((lens) => lens.readings.length || !lens.builtIn);
@@ -400,7 +469,7 @@ const story = rendered && !rendered.error ? { projectionHash: rendered.projectio
 if (story) {
   const STOP = new Set('the and for from with was were been its his her their she they them him this that these those not but then than there here what which who whom when where how all any each one two three into out over after before about again more most some such only own same too very can will just said says had has have did does done you our your are would could should like back down off'.split(' '));
   const words = (text) => (String(text ?? '').toLowerCase().replace(/[’']/g, '').match(/\p{L}[\p{L}\d-]+/gu) ?? []).filter((word) => word.length > 2 && !STOP.has(word));
-  const moments = events.filter((event) => event.start !== null && event.span !== null && event.span < 1 && !['arc', 'phase', 'period', 'life'].includes(event.role))
+  const moments = events.filter((event) => event.start !== null && event.span !== null && event.span < 1 && !['arc', 'phase', 'period', 'life', 'reading'].includes(event.role) && ['accepted_world', 'inner', 'unrooted'].includes(event.context))
     .map((event) => ({ event, words: words(`${index.events.get(event.id)?.boundary ?? ''} ${index.events.get(event.id)?.description ?? ''}`) })).sort((a, b) => a.event.start - b.event.start);
   const df = new Map(); for (const moment of moments) for (const word of new Set(moment.words)) df.set(word, (df.get(word) ?? 0) + 1);
   const vector = (list) => { const v = new Map(); for (const word of list) v.set(word, (v.get(word) ?? 0) + 1); for (const [word, n] of v) v.set(word, (1 + Math.log(n)) * Math.log((moments.length + 1) / ((df.get(word) ?? 0) + 1))); return v; };
@@ -433,7 +502,9 @@ const storyTitle = story?.units.map((unit) => unit.text.match(/^#\s+(.+)$/m)?.[1
 const storyWords = story ? story.units.reduce((sum, unit) => sum + unit.text.split('\n').filter((line) => !/^\s*#/.test(line)).join(' ').split(/\s+/).filter(Boolean).length, 0) : null;
 const data = {
   // The story's own title, from its document in the graph; else the chosen world's.
-  schema: 'meaning-model-stage-view/v1', generatedAt: new Date().toISOString(), run: runName, title: flag('--title') ?? storyTitle ?? title ?? runName,
+  schema: 'meaning-model-viewer/2', runFormat: flag('--run') ? RUN_FORMAT : null, meaningModel: meaningModelVersion, readingsPlaced: readingEvents.size > 0,
+  generatedAt: new Date().toISOString(), run: runName, title: flag('--title') ?? storyTitle ?? title ?? runName, display,
+  contexts: (mm.context_roots ?? []).map((root) => ({ eventId: root.event_id, kind: root.kind, holder: rootHolder(root.event_id), label: clip(index.events.get(root.event_id)?.boundary, 160) })),
   timeUnit: unit, firstCall, lastCall: calls.at(-1)?.at ?? null, headGraphHash: history.headGraphHash ?? null, modelHash: boundModel,
   window, extent, storyWindow, people, events, relations, draws, referents, processes, lenses,
   graph: { nodes: graphNodes, edges: graphEdges }, story, measures, steps, toolCalls,
