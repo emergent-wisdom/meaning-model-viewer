@@ -7,14 +7,18 @@ serves it in one view, at the server's root.
 The view opens as the processes view showed *Twelve Words* on stage: every named process the agent modeled as a
 curtain of light on its own scale over the story's years, the events that move them as threads through every process
 they touch, the decisions the model drew, the love-or-fear split behind the acts, the causal links between events, and
-the agent's thoughts behind them, slowly turning. Press play to sweep through the years. Beside it, the **Display**
-panel chooses how to show it (its button folds the panel away and brings it back), and the URL keeps every choice:
+the agent's thoughts behind them, slowly turning. Press play to sweep through the years. A small toolbar on the view
+chooses how to show it, as in the understanding graph: click a control and its choices appear below it. Point at
+anything in the view to read what it is, and click it to keep that open beside the view. The URL keeps every choice:
 
-- **Run.** When the viewer has more than one run open, which one to show.
-- **Camera.** *Spinning*, as it always turned; *Free*, to turn it (drag), move it (right-drag) and come closer
-  (scroll) yourself; or *Locked*, a steady framing from the front in which scrolling or pinching zooms in time and
+- **Story.** When the viewer has more than one run open, which one to show, from a dropdown. It opens on the run an
+  agent worked on last.
+- **Camera.** *Spinning*, as it always turned; *Free*, to turn it (drag), move it (right-drag), come closer to what
+  is under the pointer (scroll) and walk through it with the keys yourself; or *Locked*, a steady framing from the front in which scrolling or pinching zooms in time and
   dragging pans, and a view taller than the window moves up and down (shift and scroll, or the arrow keys).
-- **Glare.** The *full* bloom of the stage, or *toned down*.
+- **Shining** or **Less shining**: the full glare of the stage, or a quieter look without the haze.
+- **Show everything**: every kind of record, every lens and the whole tree at once; pressed again, the view as the
+  stage showed it.
 - **Play.** *The story's years*, as history plays forward: the curtains draw on, and the events, decisions, readings
   and prose appear as their moments come. Or *the construction*: the model and the story graph as the agent built
   them, step by step, with the agent's own reasons as captions and the idle time between its calls shortened. Each
@@ -32,9 +36,13 @@ panel chooses how to show it (its button folds the panel away and brings it back
 - **Depth** sets how far down the tree the view goes, and **Show** adds or takes away each kind of record: the named
   processes, the events that move them, decisions, love or fear, causal links, the agent's thoughts, the tree of
   Events, the subsidiary processes (each life's slow processes, the change arcs and their phases), and the prose part
-  by part. **Lenses** shows each lens's readings over the records they read, with whose reading each is.
+  by part. **Lenses** shows each lens's readings over the records they read, with whose reading each is. These are
+  under **Details**. The causal links run as arcs between the events they link: point at one to read which event
+  causes, enables or constrains which, and why.
 
-Keys: `D` the panel, `1`–`4` the scales, `T` processes, `L` tree, `R` terrain, `Space` play, `C` the camera, `G` the glare.
+Keys: `W` `A` `S` `D` walk through the view, `Q` and `E` go down and up, the arrows look around and `Shift` goes faster
+(the first step stops the spin; locked, `A` and `D` move through time and `W` and `S` zoom it); `1`–`4` the scales,
+`T` processes, `L` tree, `R` terrain, `Space` play, `C` the camera, `G` shining, `X` everything.
 
 The view was made for [*Twelve Words*](https://github.com/emergent-wisdom/story), the novel an agent wrote live
 with the Meaning Model at the Stockholm Claude Community event of 25 September 2026. That repo holds its run, the book
@@ -61,7 +69,7 @@ node serve.mjs --run ../story/runs/rabbit-hole
 
 The title comes from the run's `viewer.json`, else from its own story. A run is read once at the start; `--live` reads
 it again every minute while an agent is still working, and the view opened with `&live` follows it. `--run` can be
-given several times, and the view's panel then chooses between the runs; `--port` (or `PORT`) sets the port. After a
+given several times, and the view's story dropdown then chooses between the runs; `--port` (or `PORT`) sets the port. After a
 `--run`, these apply to that run:
 
 | Flag | What it does |
@@ -146,28 +154,29 @@ copied as it is. Each option is left out while it is as the stage showed it:
 | Option | Values |
 | --- | --- |
 | `camera` | `spin` (the default), `free` or `locked`; `pose=x,y,z,tx,ty,tz` keeps a free camera's place |
-| `glare` | `full` (the default) or `soft` |
+| `glare` | `full` (shining, the default) or `soft` (less shining) |
 | `mode` | `story` (the default) or `construction`; `speed=0.25`, `0.5`, `1`, `2` or `4`; `at=` the play's position, a year or an ISO time |
 | `zoom` | `story` (the default), `life` (with `life=<first name>`), `centuries` or `world`; or `t0=` and `t1=` in years, or `focus=<event id>` |
 | `view` | `together` (the processes, the default), `layers` (the tree) or `terrain`; `depth=` 0 to 6 (2 by default) |
 | `show` | any of `processes,threads,decisions,lovefear,causal,notes,events,subsidiary,prose` (the first six by default) |
 | `lenses` | `all` or lens ids |
-| `panel` | `off` folds the Display panel away |
+| `everything` | every kind of record, every lens and the whole tree |
 
 The view also takes the stage's own: `&play` starts the play, `&still` stops the spin (the free camera), `&read` opens
 the story, `&qr` the QR codes, `&nothoughts` hides the thoughts, and `&capture` hands a recorder
 `window.__frame(t, dt)` to draw one frame at a time.
 
 The pages of earlier versions open the view with what they showed: `processes.html` as it is, `explorer.html` locked,
-as the tree with the named processes and the glare toned down, and `landscape.html` as the terrain
+as the tree with the named processes and less shining, and `landscape.html` as the terrain
 across all the model's years, playing the construction (with its `&play`, `&read`, `&live`, and `&still` as the free
 camera).
 
 ## Versions
 
 - **0.3.0** is one view, at the viewer's root: the processes view as the stage showed it, with the run, every camera,
-  the glare, both plays, the explorer's scales, tree, depth and records, and the landscape's terrain in its Display
-  panel. The explorer's and the landscape's pages open it with their options.
+  shining or less, both plays, the explorer's scales, tree, depth and records, and the landscape's terrain in a small
+  toolbar on the view, and anything in it can be clicked to read what it is. The explorer's and the landscape's pages
+  open it with their options.
 - **0.2.0** opens any run with one command, and reads lens readings placed beneath their holders.
 - **0.1.0** is the landscape and the processes view as the story repo shows *Twelve Words* (The Rabbit Hole), pinned
   there as a copy.

@@ -27,6 +27,7 @@ const COLORS = new Map(); const color = (hex) => { let c = COLORS.get(hex); if (
 
 // ---- what the view shows: the URL's choices, each defaulting to the processes view as it was ---------------------------------
 const DEFAULT_SHOW = ['processes', 'threads', 'decisions', 'lovefear', 'causal', 'notes'];
+const ALL_SHOW = [...DEFAULT_SHOW, 'events', 'subsidiary', 'prose'];
 const opt = {
   camera: ['spin', 'free', 'locked'].includes(params.get('camera')) ? params.get('camera') : params.has('still') ? 'free' : 'spin',
   glare: params.get('glare') === 'soft' ? 'soft' : 'full',
@@ -34,12 +35,12 @@ const opt = {
   speed: [0.25, 0.5, 1, 2, 4].includes(Number(params.get('speed'))) ? Number(params.get('speed')) : 1,
   layout: ({ layers: 'layers', tree: 'layers', terrain: 'terrain' })[params.get('view')] ?? 'together',
   depth: Number.isFinite(Number(params.get('depth'))) && params.has('depth') ? Number(params.get('depth')) : 2,
-  show: new Set(params.has('show') ? params.get('show').split(',').filter(Boolean) : DEFAULT_SHOW.filter((key) => !(key === 'notes' && params.has('nothoughts')))),
+  show: new Set(params.has('everything') ? ALL_SHOW : params.has('show') ? params.get('show').split(',').filter(Boolean) : DEFAULT_SHOW.filter((key) => !(key === 'notes' && params.has('nothoughts')))),
   lenses: new Set(),
 };
 let ready = false; // the panel and the URL follow the view once it has started
 let dirty = true; let relayout = true; let extrasDirty = true; let currentTicks = []; // what to redraw
-let pointerAt = null; let lit = null; let litNode = null; let litReading = null; let litUnit = null; let litChain = new Set(); // what the pointer is on
+let pointerAt = null; let lit = null; let litNode = null; let litReading = null; let litUnit = null; let litArc = null; let litChain = new Set(); // what the pointer is on
 
 // ---- the rows: every measure with a path, grouped by whose it is -------------------------------------------------------
 // A process's name is the run's own (display.names in its viewer.json), else its id as words; display.order sets the rows.
@@ -162,7 +163,7 @@ const scene = new THREE.Scene(); scene.background = new THREE.Color('#050608'); 
 const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 900);
 camera.position.set(-LENGTH * 0.12, 96, zFront + 78);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(-2, 0, 5); controls.enableDamping = true; controls.autoRotate = opt.camera === 'spin'; controls.autoRotateSpeed = 0.3;
+controls.target.set(-2, 0, 5); controls.enableDamping = true; controls.zoomToCursor = true; controls.autoRotate = opt.camera === 'spin'; controls.autoRotateSpeed = 0.3;
 const HOME = { position: camera.position.clone(), target: controls.target.clone() };
 const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
 // The glare: full is the bloom the view always had; toned down keeps the light and drops most of the haze.
@@ -179,7 +180,7 @@ const label = (className, text, position, center = [0.5, 0.5], parent = field) =
 const additive = (hex, opacity = 1) => new THREE.LineBasicMaterial({ color: hex, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
 const glow = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
   r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.25, 'rgba(255,255,255,0.55)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
-const spark = (hex, size) => { const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: hex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); sprite.scale.setScalar(size); return sprite; };
+const spark = (hex, size) => { const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: hex, transparent: true, opacity: opt.glare === 'soft' ? 0.5 : 1, blending: THREE.AdditiveBlending, depthWrite: false })); sprite.scale.setScalar(size); return sprite; };
 
 // Growable buffers for what the panel adds and for the links the view redraws as it zooms: line segments, triangles and
 // glowing points, refilled whenever the view changes.
@@ -248,7 +249,7 @@ const nodeById = new Map(nodes.map((node) => [node.id, node]));
 const processById = new Map((data.processes ?? []).map((process) => [process.id, process]));
 for (const row of rows) { const process = processById.get(row.measure.id); row.depth = process?.depth ?? 1; row.home = process?.home ?? null; }
 const MAX_DEPTH = hasTree ? Math.max(...nodes.map((node) => node.depth), ...rows.map((row) => row.depth)) : 0;
-opt.depth = Math.max(0, Math.min(MAX_DEPTH, opt.depth));
+opt.depth = params.has('everything') ? MAX_DEPTH : Math.max(0, Math.min(MAX_DEPTH, opt.depth));
 const lensList = (data.lenses ?? []).filter((lens) => lens.readings.length);
 const ANSWER = ['#ffb057', '#58b4ff', '#5fd39a', '#c69bff', '#ff7aa8', '#e8e27a', '#7fe0e6']; const REMAINDER = '#4a4945';
 for (const lens of lensList) {
@@ -258,7 +259,7 @@ for (const lens of lensList) {
   lens.keyOf = (key) => (lens.palette.has(key) ? key : lens.id === 'fear-love' ? (/^love/.test(key) ? 'love' : /^fear/.test(key) ? 'fear' : 'remainder') : key);
   lens.colorOf = (key) => lens.palette.get(lens.keyOf(key)) ?? REMAINDER;
 }
-if (params.has('lenses')) opt.lenses = new Set(params.get('lenses') === 'all' ? lensList.map((lens) => lens.id) : params.get('lenses').split(',').filter(Boolean));
+if (params.has('lenses') || params.has('everything')) opt.lenses = new Set(params.has('everything') || params.get('lenses') === 'all' ? lensList.map((lens) => lens.id) : params.get('lenses').split(',').filter(Boolean));
 const prose = (data.story?.units ?? []).filter((unit) => Number.isFinite(unit.t));
 const bornAt = (item) => (item?.born?.at ? Date.parse(item.born.at) : -Infinity);
 
@@ -416,6 +417,8 @@ principals.forEach((person) => {
     if (!Number.isFinite(decision.t)) continue;
     const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.55), new THREE.MeshBasicMaterial({ color: decision.drawn ? '#ffffff' : hue }));
     gem.userData = { t: decision.t, own, lift: 2.2, decision, person }; field.add(gem); decisions.push(gem);
+    const answers = (decision.answers ?? []).slice(0, 6).map((answer) => `${Math.round(answer.weight * 100)}% ${answer.key.replace(/[_.-]+/g, ' ')}${decision.drawn?.realized === answer.key ? ' (drawn)' : ''}`).join(' · ');
+    gem.userData.hover = { kind: `A decision · ${person.name}${decision.drawn ? ' · drawn by the model' : ''}`, title: decision.question ?? decision.label ?? 'A decision', text: answers, about: [timeText(decision.t, 2)] };
     const halo = spark(hue, 3.2); gem.add(halo); halo.position.set(0, 0, 0);
   }
   for (const series of person.series.filter((item) => /love or (of )?fear/i.test(item.question))) {
@@ -432,6 +435,7 @@ principals.forEach((person) => {
     element.title = [series.question, series.unit, ...point.answers.map((answer) => `${answer.key.replace(/_/g, ' ')}: ${Math.round(answer.weight * 100)}%`),
       at ? `At: ${at.label}` : null, `Whose: ${holderText({ holder: null })}`].filter(Boolean).join('\n');
     const object = new CSS2DObject(element); object.center.set(0.5, 1); object.userData = { t: point.t, cutId: point.cutId, act, names: [person.name.split(' ')[0]], own, lift: 4.2, born: point.born }; field.add(object); lenses.push(object);
+    element.addEventListener('click', () => { const [question, unit, ...rest] = element.title.split('\n'); showDetails([tipLine('k', 'Love or fear'), tipLine('v', element.querySelector('.act').textContent), element.querySelector('.split').cloneNode(true), tipLine('m', question), ...rest.map((line) => tipLine('a', line)), tipLine('a', unit)]); });
   }
 });
 function layOnFront(item) {
@@ -455,10 +459,27 @@ for (const edge of data.graph.edges) {
   const event = byId.get(edge.target.event); if (event && Number.isFinite(event.start)) push(moments, edge.source, event);
 }
 const noteLayer = (node) => NOTE[node.category]?.[2] ?? 2;
+// Where each document of the graph is attached: the moments, people, processes, Cuts and concepts it is about.
+const cutQuestion = new Map(); for (const person of data.people) { for (const series of person.series ?? []) for (const point of series.points) if (point.cutId) cutQuestion.set(point.cutId, series.question); for (const decision of person.decisions ?? []) if (decision.cutId) cutQuestion.set(decision.cutId, decision.question); }
+const TYPE_WORDS = { 'understanding.report': 'Report', 'understanding.plan': 'Plan', 'understanding.decision': 'Decision', 'storytelling.selection': 'Selection', 'storytelling.candidate': 'Candidate', 'storytelling.idea': 'Idea', 'storytelling.context': 'Context', 'storytelling.author_model': 'Author model', 'storytelling.world': 'World stage', 'storytelling.decision': 'Story decision', model_reference: 'Model reference', direction_draw: 'Drawn decision', story_part: 'Part of the story' };
+function attachmentsOf(node) {
+  const out = []; const seen2 = new Set();
+  for (const edge of data.graph.edges) {
+    if (edge.source !== node.id || !edge.target.anchor) continue; const key = `${edge.target.anchorKind}:${edge.target.anchor}`; if (seen2.has(key)) continue; seen2.add(key);
+    const kind = edge.target.anchorKind; const id = edge.target.anchor;
+    const text = kind === 'event' ? byId.get(id)?.label : kind === 'referent' ? referents.get(id)?.name ?? data.people.find((person) => person.id === id)?.name : kind === 'process' ? NAMES[id]
+      : kind === 'normalized_cut' ? cutQuestion.get(id) ?? byId.get(edge.target.event)?.label : String(id).split('.').at(-1).replace(/_/g, ' ');
+    out.push({ kind, id, event: edge.target.event ?? null, text: clip(text ?? id, 70) });
+  }
+  return out;
+}
+const ATTACH_WORDS = { event: 'moments', referent: 'people', process: 'processes', normalized_cut: 'Cuts', concept: 'concepts', abstract_cut: 'Cuts', event_relation: 'links' };
+const attachmentText = (list) => Object.entries(list.reduce((groups, item) => { (groups[item.kind] ??= []).push(item.text); return groups; }, {}))
+  .map(([kind, texts]) => `${texts.length} ${ATTACH_WORDS[kind] ?? kind}: ${texts.slice(0, 4).join(' · ')}${texts.length > 4 ? ' …' : ''}`);
 for (const node of graphNodes) {
   const [kind, hex] = NOTE[node.category] ?? ['Note', '#dddddd'];
-  const light = spark(hex, node.category === 'passage' ? 2.6 : 2.0);
-  light.userData = { node, color: color(hex), hover: { kind, title: node.title, text: node.text, about: [...new Set((data.graph.edges.filter((e) => e.source === node.id && e.target.event).map((e) => byId.get(e.target.event)?.label).filter(Boolean)))] }, id: node.id, born: node.born };
+  const light = spark(hex, node.category === 'passage' ? 2.6 : 2.0); const attached = attachmentsOf(node);
+  light.userData = { node, color: color(hex), attached, hover: { kind: [kind, TYPE_WORDS[node.type]].filter((word, i, all) => word && all.indexOf(word) === i).join(' · '), title: node.title, text: node.text, attached: attachmentText(attached) }, id: node.id, born: node.born };
   mind.add(light); notes.push(light); hoverable.push(light);
 }
 const noteById = new Map(notes.map((light) => [light.userData.id, light]));
@@ -502,6 +523,12 @@ function drawNotes() {
   for (const light of notes) {
     if (!light.visible) continue; shown.add(light.userData.id); const on = lit === light;
     for (const event of light.userData.moments) if (shownByPlay(event.start, bornAt(event))) for (const point of meet(event)) mindLines.add(light.position.x, light.position.y, light.position.z, point.x, point.y, point.z, light.userData.color, on ? 0.95 : 0.13);
+    // Pointed at, a document also shows the people and processes it is attached to.
+    if (on) for (const item of light.userData.attached) {
+      const own = item.kind === 'process' ? [rowOf.get(item.id)].filter(Boolean) : item.kind === 'referent' ? rows.filter((row) => row.group.id === item.id || ownerOf(row.measure)?.id === item.id) : [];
+      if (!own.length) continue; const row = frontOf(own); const p = rowAt(row); const t = timeAtX(light.position.x); const target = new THREE.Vector3(X(Math.max(F.a, Math.min(F.b, t))), p.y + heightAt(row, Math.max(F.a, Math.min(F.b, t))) + 0.05, p.z);
+      mindLines.add(light.position.x, light.position.y, light.position.z, target.x, target.y, target.z, item.kind === 'process' ? color(row.group.hue) : WHITE, 0.9, 0.5);
+    }
   }
   const edge = color('#c9d4ff');
   for (const [a, b] of noteEdges) if (shown.has(a) && shown.has(b)) { const p = noteById.get(a).position; const q = noteById.get(b).position; noteLinks.add(p.x, p.y, p.z, q.x, q.y, q.z, edge, 0.16); }
@@ -517,19 +544,38 @@ const counts = causal.reduce((m, r) => ({ ...m, [r.kind]: (m[r.kind] ?? 0) + 1 }
 const laneTag = label('lane', `${causal.length} causal links`, new THREE.Vector3(-LENGTH / 2 - 1.2, 0.6, zFront + 6.5), [1, 0.5]);
 const sub = document.createElement('span'); sub.textContent = Object.entries(counts).map(([k, n]) => `${n} ${k.replace(/_/g, ' ').replace('realizes forecast', 'fulfil a forecast')}`).join(' · '); laneTag.element.append(sub);
 const laneAt = () => { const m = smooth(blend.now); const together = { y: 0.15, z: zFrontNow() + 6.5 }; if (!layersBounds || m < 0.001) return together; const layers = { y: layersBounds.y0 + 0.15, z: layersBounds.z1 + 6.5 }; return { y: together.y + (layers.y - together.y) * m, z: together.z + (layers.z - together.z) * m }; };
+// Each causal link runs as an arc from where one event stands to where the other does: the top of its thread through the
+// highest process it moves, else the top of its person's front row, else the world's. Hover one to read it, click to keep it.
+const KIND_WORDS = { causes: ['Causes', 'causes'], enables: ['Enables', 'enables'], realizes_forecast: ['Fulfils a forecast', 'fulfils a forecast made in'], constrains: ['Constrains', 'constrains'], other: ['A link', 'is linked to'] };
+function eventPoint(event) {
+  const t = Math.max(F.a, Math.min(F.b, event.start)); let best = null;
+  for (const row of (event.processIds ?? []).map((id) => rowOf.get(id)).filter((item) => item?.wall.visible)) { const p = rowAt(row); const y = p.y + heightAt(row, t) + 0.05; if (!best || y > best.y) best = new THREE.Vector3(X(t), y, p.z); }
+  if (best) return best;
+  const person = principals.find((item) => item.id === event.owner || event.participants?.includes(item.id));
+  const own = rows.filter((row) => (person ? ownerOf(row.measure) === person : !ownerOf(row.measure))); const list = own.length ? own : rows; const front = frontOf(list); const p = rowAt(front);
+  return new THREE.Vector3(X(t), p.y + heightAt(front, t) + 0.05, p.z);
+}
+let arcTargets = [];
 function drawArcs() {
-  arcsBuffer.begin(); let s = 0; const lane = laneAt(); const on = opt.show.has('causal');
-  laneTag.visible = on; laneTag.position.set(-LENGTH / 2 - 1.2, lane.y + 0.45, lane.z);
+  arcsBuffer.begin(); let s = 0; arcTargets = []; const on = opt.show.has('causal'); laneTag.visible = false;
   if (on) for (const relation of causalAll) {
     const source = byId.get(relation.source); const target = byId.get(relation.target);
     if (!inView(source.start, 0.05) || !inView(target.start, 0.05) || !seen(relation, Math.max(source.start, target.start))) continue;
-    const a = xOf(source.start); const b = xOf(target.start); const lift = 0.6 + Math.abs(b - a) * 0.28; const hex = KIND[relation.kind] ?? '#9a9a9a'; const c = color(hex);
-    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(a, lane.y, lane.z), new THREE.Vector3((a + b) / 2, lane.y - 0.15 + lift, lane.z), new THREE.Vector3(b, lane.y, lane.z)); const pts = curve.getPoints(48);
-    for (let i = 1; i < pts.length; i += 1) arcsBuffer.add(pts[i - 1].x, pts[i - 1].y, pts[i - 1].z, pts[i].x, pts[i].y, pts[i].z, c, 0.85);
-    for (const x of [a, b]) { if (s >= arcSparks.length) { const sprite = spark('#ffffff', 1.1); field.add(sprite); arcSparks.push(sprite); } const sprite = arcSparks[s]; sprite.material.color.set(hex); sprite.position.set(x, lane.y, lane.z); sprite.visible = true; s += 1; }
+    const a = eventPoint(source); const b = eventPoint(target); const hex = KIND[relation.kind] ?? '#9a9a9a'; const c = color(hex); const lit3 = litArc?.relation === relation;
+    const mid = new THREE.Vector3((a.x + b.x) / 2, Math.max(a.y, b.y) + 1.2 + Math.abs(b.x - a.x) * 0.12, (a.z + b.z) / 2); const pts = new THREE.QuadraticBezierCurve3(a, mid, b).getPoints(40);
+    for (let i = 1; i < pts.length; i += 1) arcsBuffer.add(pts[i - 1].x, pts[i - 1].y, pts[i - 1].z, pts[i].x, pts[i].y, pts[i].z, lit3 ? WHITE : c, lit3 ? 1 : 0.8);
+    for (const point of [a, b]) { if (s >= arcSparks.length) { const sprite = spark('#ffffff', 1.1); field.add(sprite); arcSparks.push(sprite); } const sprite = arcSparks[s]; sprite.material.color.set(hex); sprite.position.copy(point); sprite.visible = true; s += 1; }
+    arcTargets.push({ kind: 'arc', relation, source, target, pts: pts.filter((_, i) => i % 3 === 0 || i === pts.length - 1) });
   }
   for (let i = s; i < arcSparks.length; i += 1) arcSparks[i].visible = false;
   arcsBuffer.end();
+}
+// What a causal link says, in words: the two events, what the one does to the other, and when.
+function arcLines(target) {
+  const { relation, source, target: to } = target; const [kind, verb] = KIND_WORDS[relation.kind] ?? [relation.kind, relation.kind];
+  return [['k', `A causal link · ${kind}`], ['v', clip(source.label, 160)], ['m', `${verb}`], ['v', clip(to.label, 160)],
+    ...(relation.description ? [['m', relation.description]] : []), ['a', `${timeText(source.start, 2)} → ${timeText(to.start, 2)}`],
+    ...(source.description ? [['a', `${clip(source.label, 50)}: ${clip(source.description, 240)}`]] : []), ...(to.description ? [['a', `${clip(to.label, 50)}: ${clip(to.description, 240)}`]] : [])];
 }
 
 // The sweep: a plane of light at the story's moment.
@@ -639,7 +685,7 @@ const labels2 = (() => {
       wanted.push({ key: `ev:${node.id}`, cls: `event${big ? ' big' : ''}${node.event.context === 'inner' ? ' inner' : ''}`, html: esc(words(node.event.name, big ? 52 : 40)), p: [wide > 1.2 ? x0 + 0.25 : (x0 + x1) / 2, top + 0.12, p.z], ax: wide > 1.2 ? 0 : 0.5, ay: 1, pri });
     }
     if (opt.show.has('prose')) { const top = mindTop(); for (const unit of prose) { if (!shownByPlay(unit.t, bornAt(unit))) continue; const x = X(unit.t); if (x >= left && x <= right) wanted.push({ key: `prose:${unit.id}`, cls: 'prose', html: esc(unit.title ?? ''), p: [x, top.y - 3.35, top.z + 4], ax: 0.5, ay: 1, pri: 800 }); } }
-    const panels = [...document.querySelectorAll('.hud.caption, .hud.bar, .hud.legend, .hud.title, .hud.stats, #panel')].map((el) => el.getBoundingClientRect()).filter((r) => r.width);
+    const panels = [...document.querySelectorAll('.hud.caption, .hud.bar, .hud.legend, .hud.title, .hud.stats, #tools, .pop:not([hidden]), #details:not([hidden])')].map((el) => el.getBoundingClientRect()).filter((r) => r.width);
     const placed = [...panels.map((r) => ({ l: r.left - 6, r: r.right + 6, t: r.top - 4, b: r.bottom + 4 }))];
     for (const el of labels.domElement.querySelectorAll('.label.row, .label.group, .label.year, .label.lane')) { if (el.style.display === 'none') continue; const r = el.getBoundingClientRect(); if (r.width) placed.push({ l: r.left, r: r.right, t: r.top, b: r.bottom }); }
     wanted.sort((a, b) => b.pri - a.pri);
@@ -838,7 +884,7 @@ function applyTerrain() {
 }
 // Terrain labels that would cover the time marks, the panels or each other lift a little; the rest wait for the pointer.
 function declutterTerrain() {
-  const placed = []; const panels = [...document.querySelectorAll('.hud.caption, .hud.bar, .hud.legend, .hud.title, .hud.stats')].map((el) => el.getBoundingClientRect()); if (!panel.hidden) panels.push(panel.getBoundingClientRect());
+  const placed = []; const panels = [...document.querySelectorAll('.hud.caption, .hud.bar, .hud.legend, .hud.title, .hud.stats, #tools, .pop:not([hidden]), #details:not([hidden])')].map((el) => el.getBoundingClientRect());
   const under = (r) => panels.some((p) => r.left < p.right && r.right > p.left && r.top < p.bottom && r.bottom > p.top);
   for (const el of labels.domElement.querySelectorAll('.label.year, .label.group, .label.group-count')) { el.style.opacity = ''; const r = el.getBoundingClientRect(); if (!r.width) continue; if (under(r)) { el.style.opacity = '0'; continue; } placed.push(r); }
   placed.push(...panels);
@@ -866,7 +912,7 @@ function showTerrain(on) {
   if (on && !terrain.built) { buildTerrain(); const d = terrain.depth; terrain.home = { position: new THREE.Vector3(-LENGTH * 0.36, 47 * TS, d * 0.62 + 56 * TS), target: new THREE.Vector3(12 * TS, 2 * TS, d * 0.05) }; terrain.homeDistance = terrain.home.position.distanceTo(terrain.home.target); }
   terrain.on = on; if (terrain.group) terrain.group.visible = on; field.visible = !on;
   renderer.toneMapping = on ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping; renderer.toneMappingExposure = on ? 1.05 : 1;
-  [bloom.strength, bloom.radius, bloom.threshold] = (on ? TERRAIN_GLARE : GLARE)[opt.glare];
+  applyShine();
   if (opt.camera !== 'locked') { camera.fov = on ? 42 : 40; scene.fog.density = on ? TFOG : FOG; camera.updateProjectionMatrix(); }
   for (const id of ['depth-section', 'show-section', 'lenses-section']) document.getElementById(id).hidden = on || (id === 'lenses-section' && !lensList.length) || (id === 'depth-section' && !hasTree);
   if (!on) highlightRow(null); tip.hidden = true; statsShown = null; hud(); relayout = true; dirty = true;
@@ -1023,9 +1069,10 @@ const LOCKED = { fov: 17, elevation: 0.8, pose: null, scroll: 0 };
 const HOME_DISTANCE = HOME.position.distanceTo(HOME.target); const FOG = 0.0048;
 function freeRoom() {
   const title = document.querySelector('.hud.title').getBoundingClientRect(); const stats = document.getElementById('stats').getBoundingClientRect(); const bar = document.querySelector('.hud.bar').getBoundingClientRect();
-  const side = [document.getElementById('panel'), document.getElementById('legend')].map((el) => el.getBoundingClientRect()).find((r) => r.width && r.left > innerWidth * 0.5);
+  const side = [document.getElementById('details'), document.getElementById('legend')].map((el) => el.getBoundingClientRect()).find((r) => r.width && r.left > innerWidth * 0.5);
+  const tools = document.getElementById('tools').getBoundingClientRect();
   const caption = document.querySelector('.hud.caption').getBoundingClientRect();
-  return { l: 28, r: side ? side.left - 20 : innerWidth - 28, t: Math.min(Math.max(title.bottom, stats.bottom) + 24, innerHeight * 0.35), b: (caption.height ? caption.top : bar.top || innerHeight - 66) - 16 };
+  return { l: 28, r: side ? side.left - 20 : innerWidth - 28, t: Math.min(Math.max(title.bottom, stats.bottom, tools.bottom) + 24, innerHeight * 0.35), b: (caption.height ? caption.top : bar.top || innerHeight - 66) - 16 };
 }
 // The whole view fits the free room when it can. A tall one (a deep tree in layers) is never shrunk below three quarters
 // of the size that fills the width: it runs on below, and scrolls (shift and scroll, drag up and down, or the arrow keys).
@@ -1084,7 +1131,7 @@ function setCamera(mode, first = false) {
     camera.clearViewOffset(); camera.fov = terrain.on ? 42 : 40; camera.far = 900; scene.fog.density = terrain.on ? TFOG : FOG; camera.updateProjectionMatrix();
     if (was === 'locked' && !first) { const back = poses[fieldKey()] ?? homeOf(fieldKey()); camera.position.copy(back.position); controls.target.copy(back.target); if (!poses.field && !terrain.on) framed = HOME_FRAME; reframe(); }
   }
-  document.getElementById('camera-note').textContent = mode === 'locked' ? 'A steady framing. Scroll or pinch zooms in time, drag pans.' : mode === 'free' ? 'Drag to turn it, right-drag to move it, scroll to come closer.' : 'Turning slowly, as it always did. Drag to turn it yourself.';
+  document.getElementById('camera-note').textContent = mode === 'locked' ? 'A steady framing. Scroll or pinch zooms in time, drag pans; A and D move through time, W and S zoom it.' : `${mode === 'free' ? 'Held where you leave it.' : 'Turning slowly, as it always did.'} Drag to turn it, right-drag to move it, scroll to come closer to what is under the pointer. W A S D walk through it, Q and E go down and up, the arrows look around, Shift goes faster.`;
   syncPanel(); syncURL(); dirty = true;
 }
 // The camera's pose, kept in the URL when it is free.
@@ -1176,13 +1223,12 @@ const FIELD_LEGEND = '<div class="key-head">How to read it</div>'
   + keyRow('<svg width="10" height="16"><line x1="5" y1="1" x2="5" y2="15" stroke="#fff" stroke-width="2"/></svg>', 'A thread is an event, through every process it moves')
   + keyRow('<svg width="14" height="14"><path d="M7 1 L13 7 L7 13 L1 7Z" fill="#fff"/></svg>', 'A diamond is a decision the model drew from its weights')
   + keyRow('<svg width="28" height="8"><rect width="15" height="8" rx="3" fill="#ffb057"/><rect x="15" width="10" height="8" fill="#58b4ff"/></svg>', 'How much of an act comes from love and how much from fear')
-  + keyRow('<svg width="28" height="12"><path d="M1 11 Q14 -4 27 11" stroke="#ff8a4c" stroke-width="2" fill="none"/></svg>', 'An arc is a causal link: causes, enables, fulfils a forecast')
-  + keyRow('<svg width="16" height="16"><circle cx="8" cy="8" r="4" fill="#c9d4ff"/><circle cx="8" cy="8" r="7.5" fill="none" stroke="#c9d4ff" stroke-opacity="0.35"/></svg>', `Thoughts shows the agent's ${notes.length} notes and passages behind the processes; hover one, or an event's spark, to read it`)
+  + keyRow('<svg width="28" height="12"><path d="M1 11 Q14 -4 27 11" stroke="#ff8a4c" stroke-width="2" fill="none"/></svg>', 'An arc is a causal link from one event to another: causes, enables, fulfils a forecast')
+  + keyRow('<svg width="16" height="16"><circle cx="8" cy="8" r="4" fill="#c9d4ff"/><circle cx="8" cy="8" r="7.5" fill="none" stroke="#c9d4ff" stroke-opacity="0.35"/></svg>', `Thoughts shows the agent's ${notes.length} notes and passages behind the processes. Point at anything to read it, click to keep it open`)
   + `<div class="key-row" style="gap:12px;flex-wrap:wrap">${groups.map((g) => `<span style="display:inline-flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:50%;background:${g.hue};display:inline-block"></i>${g.label}</span>`).join('')}</div>`;
 
 // ---- the story, as the tool renders it from the graph ------------------------------------------------------------------------
-// The legend stands on the right when the panel is folded away, and inside the panel when it is open.
-const setLegend = (html) => { document.getElementById('legend').innerHTML = html; document.getElementById('panel-legend').innerHTML = html; };
+const setLegend = (html) => { document.getElementById('legend').innerHTML = html; };
 setLegend(FIELD_LEGEND);
 // The terrain's own words: what its ridges, beams, diamonds and lights are, and how many functions rise.
 function hud() {
@@ -1235,7 +1281,7 @@ qrPanel.addEventListener('click', () => { qrPanel.hidden = true; });
 addEventListener('keydown', (event) => { if (event.key === 'Escape') qrPanel.hidden = true; });
 if (params.has('qr')) qrPanel.hidden = false;
 
-// ---- the display panel ------------------------------------------------------------------------------------------------------------
+// ---- the toolbar ------------------------------------------------------------------------------------------------------------------
 const KINDS = [
   ['processes', 'Named processes', '#9fc3ff', () => measures.length],
   ['threads', 'Events moving them', '#ffffff', () => threads.length],
@@ -1248,28 +1294,44 @@ const KINDS = [
   ['prose', 'Prose, part by part', '#fff0d0', () => prose.length],
 ];
 const depthNote = { 0: 'The world alone.', 1: 'The world and what it holds: long developments, lives, places and institutions.', 2: 'With the periods, change arcs and parts of each.', 3: 'With the phases of each change and the moments in them.', 4: 'With the moments within moments.', 5: 'Deeper still.', 6: 'The whole tree.' };
-const panel = document.getElementById('panel');
-// Which run: every run the viewer has open. Choosing one opens the view on it, keeping how the view shows it.
+// The toolbar, the legend and what was clicked stand together on the right.
+const panel = document.getElementById('side');
+// Each control of the toolbar opens its choices below it, one at a time; a click elsewhere or Escape closes them.
+let popOpen = null;
+function togglePop(id) {
+  popOpen = popOpen === id ? null : id;
+  for (const pop of document.querySelectorAll('.pop')) pop.hidden = pop.id !== popOpen;
+  for (const button of document.querySelectorAll('.tool[data-pop]')) button.classList.toggle('open', button.dataset.pop === popOpen);
+}
+for (const button of document.querySelectorAll('.tool[data-pop]')) button.addEventListener('click', () => togglePop(button.dataset.pop));
+document.addEventListener('pointerdown', (event) => { if (popOpen && !event.target.closest?.('.tool-wrap')) togglePop(popOpen); });
+addEventListener('keydown', (event) => { if (event.key === 'Escape' && popOpen) togglePop(popOpen); });
+// Which story: every run the viewer has open, the one an agent worked on last first. Choosing one opens the view on it,
+// keeping how it is shown.
 fetch('data/index.json', { cache: 'no-store' }).then((response) => response.json()).then((index) => {
-  const runs = index.runs ?? []; if (runs.length < 2) return;
-  const box = document.getElementById('runs'); document.getElementById('runs-section').hidden = false;
-  for (const run of runs) {
-    const button = document.createElement('button'); button.classList.toggle('on', run.name === dataName); button.textContent = run.label ?? run.title ?? run.name;
-    const when = run.lastCall ? new Date(run.lastCall).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) : null;
-    const meta = document.createElement('span'); meta.textContent = [`${run.events} Events`, when ? `last worked on ${when} UTC` : null].filter(Boolean).join(' · '); button.append(meta);
-    button.addEventListener('click', () => {
-      if (run.name === dataName) return; const next = new URLSearchParams(location.search); next.set('data', run.name); next.delete('panel');
-      for (const key of ['at', 'pose', 'focus', 'lenses']) next.delete(key);
-      location.search = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/=(&|$)/g, '$1');
-    });
-    box.append(button);
-  }
+  const runs = [...(index.runs ?? [])].sort((a, b) => String(b.lastCall ?? '').localeCompare(String(a.lastCall ?? ''))); if (runs.length < 2) return;
+  const select = document.getElementById('story'); select.hidden = false;
+  for (const run of runs) { const option = document.createElement('option'); option.value = run.name; option.textContent = run.label ?? run.title ?? run.name; option.selected = run.name === dataName; select.append(option); }
+  select.addEventListener('change', () => {
+    const next = new URLSearchParams(location.search); next.set('data', select.value); for (const key of ['at', 'pose', 'focus', 'lenses']) next.delete(key);
+    location.search = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/\+/g, '%20').replace(/=(&|$)/g, '$1');
+  });
 }).catch(() => { /* one run, or none to choose from */ });
-function openPanel(on) { panel.hidden = !on; document.body.classList.toggle('panel-open', on); document.getElementById('display').classList.toggle('on', on); document.getElementById('display').setAttribute('aria-expanded', String(on)); if (opt.camera === 'locked') { fitLocked(); placeLocked(true); } syncURL(); dirty = true; }
-document.getElementById('display').addEventListener('click', () => openPanel(panel.hidden));
-document.getElementById('panel-close').addEventListener('click', () => openPanel(false));
+// Shining, or less shining: the full glare of the stage or a quieter one.
+function applyShine() {
+  [bloom.strength, bloom.radius, bloom.threshold] = (terrain.on ? TERRAIN_GLARE : GLARE)[opt.glare];
+  const dim = opt.glare === 'soft' ? 0.5 : 1; scene.traverse((object) => { if (object.isSprite) object.material.opacity = dim; });
+}
+const setShine = (glare) => { opt.glare = glare; applyShine(); syncPanel(); syncURL(); };
+document.getElementById('shine').addEventListener('click', () => setShine(opt.glare === 'full' ? 'soft' : 'full'));
+// Everything: every kind of record, every lens and the whole tree; pressed again, the view as the stage showed it.
+const isEverything = () => KINDS.every(([key, , , count]) => !count() || opt.show.has(key)) && opt.lenses.size === lensList.length && opt.depth >= MAX_DEPTH;
+function setEverything(on) {
+  opt.show = new Set(on ? KINDS.map(([key]) => key) : DEFAULT_SHOW); opt.lenses = new Set(on ? lensList.map((lens) => lens.id) : []); opt.depth = on ? MAX_DEPTH : 2;
+  showThoughts(opt.show.has('notes')); computeLayout(); apply(); syncPanel(); syncURL(); extrasDirty = true;
+}
+document.getElementById('everything').addEventListener('click', () => setEverything(!isEverything()));
 for (const button of document.querySelectorAll('#cameras button')) button.addEventListener('click', () => setCamera(button.dataset.camera));
-for (const button of document.querySelectorAll('#glares button')) button.addEventListener('click', () => { opt.glare = button.dataset.glare; [bloom.strength, bloom.radius, bloom.threshold] = (terrain.on ? TERRAIN_GLARE : GLARE)[opt.glare]; syncPanel(); syncURL(); });
 for (const button of document.querySelectorAll('#modes button')) button.addEventListener('click', () => { stop(); opt.mode = button.dataset.mode; atEnd = true; tau = C1; now = F.b; apply(); syncPanel(); syncURL(); });
 for (const button of document.querySelectorAll('#speeds button')) button.addEventListener('click', () => { opt.speed = Number(button.dataset.speed); if (playing) { stop(); play(); } syncPanel(); syncURL(); });
 for (const button of document.querySelectorAll('#presets button')) button.addEventListener('click', () => preset(button.dataset.preset));
@@ -1302,9 +1364,16 @@ function syncPanel() {
   const on = (selector, attr, value) => { for (const button of document.querySelectorAll(selector)) button.classList.toggle('on', button.dataset[attr] === String(value)); };
   document.getElementById('play').setAttribute('aria-label', building() ? 'Play the construction' : "Play the story's years");
   document.getElementById('layout-note').textContent = { together: 'Every process on its own scale in one field, as the stage showed it.', layers: "The model's tree level by level: the world, what it holds, each life and its parts, every process at the level of what holds it.", terrain: 'Every function of the model as one terrain, as the landscape showed it: the lives and their shocks, the processes they run through, what they want, feel and expect, and the world behind them.' }[opt.layout];
-  on('#cameras button', 'camera', opt.camera); on('#glares button', 'glare', opt.glare); on('#modes button', 'mode', opt.mode); on('#speeds button', 'speed', opt.speed); on('#layouts button', 'layout', opt.layout);
+  const lifeName = lives.length ? `${lives[lifeTurn % lives.length].name}'s life` : 'A life';
+  setText('t-show', { together: 'Processes', layers: 'Tree', terrain: 'Terrain' }[opt.layout]); setText('t-camera', { spin: 'Spinning', free: 'Free', locked: 'Locked' }[opt.camera]);
+  setText('t-time', currentPreset ? { story: 'Story', life: lifeName, centuries: 'Centuries', world: 'World history' }[currentPreset] : spanText(F.a, F.b));
+  setText('t-play', `${building() ? 'The construction' : "The story's years"}${opt.speed !== 1 ? ` · ${{ 0.25: '¼', 0.5: '½' }[opt.speed] ?? opt.speed}×` : ''}`);
+  setText('mode-note', building() ? 'The model and the story graph as the agent built them, step by step, with its own reasons as captions.' : 'History plays forward: the processes draw on, and events, decisions and thoughts arrive as their moments come.');
+  const shine = document.getElementById('shine'); shine.setAttribute('aria-pressed', String(opt.glare === 'full')); setText('shine', opt.glare === 'full' ? 'Shining' : 'Less shining');
+  document.getElementById('everything').setAttribute('aria-pressed', String(isEverything()));
+  on('#cameras button', 'camera', opt.camera); on('#modes button', 'mode', opt.mode); on('#speeds button', 'speed', opt.speed); on('#layouts button', 'layout', opt.layout);
   for (const button of document.querySelectorAll('#presets button')) button.classList.toggle('on', button.dataset.preset === currentPreset);
-  const life = document.querySelector('#presets [data-preset="life"]'); if (life) life.textContent = currentPreset === 'life' && lives.length ? `${lives[lifeTurn % lives.length].name}'s life` : 'A life';
+  const life = document.querySelector('#presets [data-preset="life"]'); if (life) life.textContent = currentPreset === 'life' ? lifeName : 'A life';
   for (const [i, button] of [...document.querySelectorAll('#depths button')].entries()) button.classList.toggle('on', i === opt.depth);
   document.getElementById('depth-note').textContent = depthNote[opt.depth] ?? '';
   for (const row of document.querySelectorAll('#kinds .toggle')) row.classList.toggle('on', opt.show.has(row.dataset.key));
@@ -1313,14 +1382,14 @@ function syncPanel() {
   document.getElementById('span').textContent = `${timeText(F.a)} – ${timeText(F.b)} · ${spanText(F.a, F.b)}${F.w > 0.5 ? ' · years before the present, on a log scale' : ''}`;
 }
 addEventListener('keydown', (event) => {
-  if (event.target.closest?.('input, textarea') || event.metaKey || event.ctrlKey) return;
+  if (event.target.closest?.('input, textarea, select') || event.metaKey || event.ctrlKey) return;
   const keys = { 1: 'story', 2: 'life', 3: 'centuries', 4: 'world' }; if (keys[event.key]) preset(keys[event.key]);
-  if (event.key === 'd' || event.key === 'D') openPanel(panel.hidden);
   if (event.key === 'l' || event.key === 'L') setLayout('layers');
   if (event.key === 't' || event.key === 'T') setLayout('together');
   if (event.key === 'r' || event.key === 'R') setLayout('terrain');
   if (event.key === 'c' || event.key === 'C') setCamera({ spin: 'free', free: 'locked', locked: 'spin' }[opt.camera]);
-  if (event.key === 'g' || event.key === 'G') document.querySelector(`#glares [data-glare="${opt.glare === 'full' ? 'soft' : 'full'}"]`).click();
+  if (event.key === 'g' || event.key === 'G') setShine(opt.glare === 'full' ? 'soft' : 'full');
+  if (event.key === 'x' || event.key === 'X') setEverything(!isEverything());
   if (event.key === ' ' && !event.target.closest?.('button')) { event.preventDefault(); if (playing) stop(); else play(); }
   if (event.key === '+' || event.key === '=') zoomAt(innerWidth / 2, innerHeight / 2, 1.6); if (event.key === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.6);
   if (opt.camera === 'locked' && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) { event.preventDefault(); scrollLocked(event.key === 'ArrowDown' ? 120 : -120); }
@@ -1339,10 +1408,10 @@ function syncURL() {
     if (opt.layout !== 'together') next.set('view', opt.layout); if (opt.depth !== 2) next.set('depth', String(opt.depth));
     if (opt.camera === 'free' && (camera.position.distanceTo(HOME.position) > 0.05 || controls.target.distanceTo(HOME.target) > 0.05)) next.set('pose', [...camera.position.toArray(), ...controls.target.toArray()].map((v) => v.toFixed(1)).join(','));
     const show = [...opt.show].sort().join(','); const without = DEFAULT_SHOW.filter((key) => key !== 'notes').sort().join(',');
-    if (show === without) next.set('nothoughts', ''); else if (show !== [...DEFAULT_SHOW].sort().join(',')) next.set('show', show);
-    if (opt.lenses.size) next.set('lenses', opt.lenses.size === lensList.length ? 'all' : [...opt.lenses].join(','));
+    if (isEverything()) { next.set('everything', ''); next.delete('depth'); }
+    else { if (show === without) next.set('nothoughts', ''); else if (show !== [...DEFAULT_SHOW].sort().join(',')) next.set('show', show); if (opt.lenses.size) next.set('lenses', opt.lenses.size === lensList.length ? 'all' : [...opt.lenses].join(',')); }
     if (!atEnd && !playing) next.set('at', opt.mode === 'construction' ? new Date(tau).toISOString() : now.toFixed(4)); else if (!atEnd && opt.mode === 'construction') next.set('at', new Date(tau).toISOString());
-    if (panel.hidden && !params.has('capture')) next.set('panel', 'off'); if (!document.getElementById('reader').hidden) next.set('read', ''); if (!qrPanel.hidden) next.set('qr', '');
+    if (!document.getElementById('reader').hidden) next.set('read', ''); if (!qrPanel.hidden) next.set('qr', '');
     const query = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/\+/g, '%20').replace(/=(&|$)/g, '$1');
     history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}`);
   }, 400);
@@ -1372,12 +1441,24 @@ function relayOut() {
 }
 renderer.domElement.addEventListener('pointermove', (event) => { pointerAt = { x: event.clientX, y: event.clientY }; });
 renderer.domElement.addEventListener('pointerleave', () => { pointerAt = null; tip.hidden = true; });
-renderer.domElement.addEventListener('click', () => { if (litUnit) { document.getElementById('reader').hidden = false; renderReader(litUnit.id); } });
+// A click on anything opens what it is beside the view, as in the understanding graph; a click on nothing closes it.
+const details = document.getElementById('details');
+function showDetails(nodes) { document.getElementById('details-body').replaceChildren(...nodes); details.hidden = false; document.body.classList.add('details-open'); if (opt.camera === 'locked') { fitLocked(); placeLocked(true); } dirty = true; }
+function hideDetails() { if (details.hidden) return; details.hidden = true; document.body.classList.remove('details-open'); if (opt.camera === 'locked') { fitLocked(); placeLocked(true); } dirty = true; }
+document.getElementById('details-close').addEventListener('click', hideDetails);
+addEventListener('keydown', (event) => { if (event.key === 'Escape') hideDetails(); });
+let downAt = null; renderer.domElement.addEventListener('pointerdown', (event) => { downAt = { x: event.clientX, y: event.clientY }; });
+renderer.domElement.addEventListener('click', (event) => {
+  if (downAt && Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y) > 5) return; // a drag, not a click
+  if (litUnit) { document.getElementById('reader').hidden = false; renderReader(litUnit.id); return; }
+  pointerAt = { x: event.clientX, y: event.clientY }; hoveredAt = null; quietAt = null; hover();
+  if (!tip.hidden && tip.childNodes.length) { showDetails([...tip.childNodes].map((node) => node.cloneNode(true))); tip.hidden = true; quietAt = { ...pointerAt }; } else hideDetails();
+});
 // Love-or-fear chips lift clear of each other; values and event names that would cover something wait for their turn.
 function declutter() {
   if (terrain.on) { declutterTerrain(); return; }
   const panels = [...document.querySelectorAll('.hud.caption, .hud.bar, .hud.legend, .hud.title, .hud.stats')].map((el) => el.getBoundingClientRect());
-  if (!panel.hidden) panels.push(panel.getBoundingClientRect());
+  for (const el of document.querySelectorAll('#tools, .pop:not([hidden]), #details:not([hidden])')) panels.push(el.getBoundingClientRect());
   const placed = [...panels];
   // Beyond the stage's field (the tree added, layers, another scale, or held still) the names of whoever and whatever
   // would cover each other take turns, and a love-or-fear chip with no room waits; the stage's field keeps its own rules.
@@ -1410,7 +1491,7 @@ function hover() {
   if (!pointerAt) return;
   // The nearest light on screen within 16 pixels: the lights are small, so a pointer near one reads it.
   let hit = null; let best = 16 * 16; const at = new THREE.Vector3();
-  for (const item of [...(mind.visible ? hoverable : []), ...eventSparks]) {
+  for (const item of [...(mind.visible ? hoverable : []), ...eventSparks, ...decisions]) {
     if (!item.visible || item.parent?.visible === false) continue;
     item.getWorldPosition(at).project(camera); if (at.z > 1) continue;
     const dx = (at.x + 1) / 2 * innerWidth - pointerAt.x; const dy = (1 - at.y) / 2 * innerHeight - pointerAt.y; const d = dx * dx + dy * dy;
@@ -1431,6 +1512,10 @@ function hover() {
     extrasDirty = true;
   }
   if (extra) { lit = null; showExtraTip(extra); return; }
+  // A causal link under the pointer, when no light or bar is nearer.
+  let arc = null; if (!hit) { let bestArc = 8; for (const target of arcTargets) for (let i = 1; i < target.pts.length; i += 1) { const a = screen(target.pts[i - 1].x, target.pts[i - 1].y, target.pts[i - 1].z); const b = screen(target.pts[i].x, target.pts[i].y, target.pts[i].z); if (!a.ok || !b.ok) continue; const d = distToSeg(pointerAt, a, b); if (d < bestArc) { bestArc = d; arc = target; } } }
+  if (arc !== litArc) { litArc = arc; drawArcs(); }
+  if (arc) { if (lit) { lit = null; drawNotes(); } renderer.domElement.style.cursor = 'help'; tip.replaceChildren(...arcLines(arc).map(([cls, text]) => tipLine(cls, text))); placeTip(); return; }
   if (!hit) { tip.hidden = true; renderer.domElement.style.cursor = ''; if (lit) { lit = null; drawNotes(); } return; }
   if (lit !== hit) { lit = hit; drawNotes(); }
   const info = hit.userData.hover; renderer.domElement.style.cursor = 'help';
@@ -1439,10 +1524,12 @@ function hover() {
   const repeats = info.title && info.text && info.text.startsWith(info.title.replace(/…$/, ''));
   if (info.title && !repeats) { const title = document.createElement('div'); title.className = 'v'; title.textContent = info.title; tip.append(title); }
   if (info.text && info.text !== info.title) { const text = document.createElement('div'); text.className = 'm'; text.textContent = info.text; tip.append(text); }
-  if (info.about?.length) { const about = document.createElement('div'); about.className = 'a'; about.textContent = `${info.kind === 'Event' ? 'Moves' : 'About'}: ${info.about.slice(0, 6).join(' · ')}`; tip.append(about); }
+  if (info.about?.length) { const about = document.createElement('div'); about.className = 'a'; about.textContent = hit.userData.decision ? info.about.join(' · ') : `${info.kind === 'Event' ? 'Moves' : 'About'}: ${info.about.slice(0, 6).join(' · ')}`; tip.append(about); }
+  if (info.attached) { if (!info.attached.length) tip.append(tipLine('a', 'Attached to nothing in the model: a note of the agent’s own.')); else { tip.append(tipLine('a', 'Attached to')); for (const line of info.attached) tip.append(tipLine('a', line)); } }
   placeTip();
 }
-function placeTip() { tip.hidden = false; const w = tip.offsetWidth; const h = tip.offsetHeight; tip.style.left = `${Math.min(innerWidth - w - 12, pointerAt.x + 16)}px`; tip.style.top = `${Math.min(innerHeight - h - 12, Math.max(12, pointerAt.y + 16))}px`; }
+let quietAt = null; // where a click opened the details: no tooltip there until the pointer moves
+function placeTip() { if (quietAt && pointerAt && quietAt.x === pointerAt.x && quietAt.y === pointerAt.y) { tip.hidden = true; return; } quietAt = null; tip.hidden = false; const w = tip.offsetWidth; const h = tip.offsetHeight; tip.style.left = `${Math.min(innerWidth - w - 12, pointerAt.x + 16)}px`; tip.style.top = `${Math.min(innerHeight - h - 12, Math.max(12, pointerAt.y + 16))}px`; }
 const weightsBox = (answers, colorOf) => { const box = document.createElement('div'); box.className = 'w'; for (const answer of answers.slice(0, 6)) { const b = document.createElement('b'); b.textContent = `${Math.round(answer.weight * 100)}%`; if (colorOf) b.style.color = colorOf(answer.key); const i = document.createElement('i'); i.textContent = answer.key.replace(/[_.-]+/g, ' '); box.append(b, i); } return box; };
 function showExtraTip(target) {
   renderer.domElement.style.cursor = target.kind === 'prose' ? 'pointer' : 'help'; tip.replaceChildren();
@@ -1478,10 +1565,8 @@ if (params.has('t0') && params.has('t1')) { currentPreset = null; setView(Math.m
 else if (params.has('focus') && treeById.has(params.get('focus'))) { const { reach } = treeById.get(params.get('focus')); currentPreset = null; setView(...windowAt((reach[0] + reach[1]) / 2, 0.5, Math.max(0.02, (reach[1] - reach[0]) * 1.6))); }
 else if (currentPreset && currentPreset !== 'story') preset(currentPreset, false);
 if (params.has('at')) { const at = params.get('at'); if (opt.mode === 'construction') { const t = Date.parse(at); if (Number.isFinite(t)) { tau = Math.max(C0, Math.min(C1, t)); atEnd = tau >= C1; } } else if (Number.isFinite(Number(at))) { now = Number(at); atEnd = false; } }
-// The panel with every choice is open beside the view, unless the URL folds it away or a recorder is drawing frames.
-openPanel(params.get('panel') !== 'off' && !params.has('capture'));
 if (opt.layout === 'terrain') { showTerrain(true); if (opt.camera !== 'locked') { camera.position.copy(terrain.home.position); controls.target.copy(terrain.home.target); } }
-setCamera(opt.camera, true);
+setCamera(opt.camera, true); if (opt.glare !== 'full') applyShine();
 // A kept pose was the camera's in the field as the URL has it.
 if (params.has('pose')) { const v = params.get('pose').split(',').map(Number); if (v.length === 6 && v.every(Number.isFinite)) { camera.position.set(v[0], v[1], v[2]); controls.target.set(v[3], v[4], v[5]); framed = fieldFrame(); } }
 relayOut();
@@ -1491,7 +1576,31 @@ if (params.has('live')) setInterval(async () => {
   try { const next = await (await fetch(`data/${encodeURIComponent(dataName)}.json?ts=${Date.now()}`, { cache: 'no-store' })).json(); if (next.lastCall !== data.lastCall || next.headGraphHash !== data.headGraphHash) { syncURL(); setTimeout(() => location.reload(), 500); } } catch { /* keep the last view */ }
 }, 20000);
 let last = performance.now();
+// Walking through the view: W and S forward and back, A and D to the sides, Q and E down and up, the arrows to look around,
+// Shift to go faster. The first step stops the spin. Locked, A and D move through time and W and S zoom in and out of it.
+const held = new Set(); const WALK = new Set(['w', 'a', 's', 'd', 'q', 'e', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown']);
+addEventListener('keydown', (event) => {
+  if (event.target.closest?.('input, textarea, select') || event.metaKey || event.ctrlKey || event.altKey) return; const key = event.key.toLowerCase(); if (!WALK.has(key)) return;
+  if (opt.camera === 'locked' && key.startsWith('arrow')) return; // the arrows scroll a tall locked view
+  if (!held.size && opt.camera === 'spin') setCamera('free'); held.add(key); event.preventDefault();
+});
+addEventListener('keyup', (event) => { held.delete(event.key.toLowerCase()); if (!held.size && opt.camera === 'free') syncURL(); });
+addEventListener('blur', () => held.clear());
+const forward = new THREE.Vector3(); const side = new THREE.Vector3(); const UP = new THREE.Vector3(0, 1, 0);
+function walk(dt) {
+  if (!held.size) return; const fast = shiftDown ? 3 : 1; const k = (key) => (held.has(key) ? 1 : 0);
+  if (opt.camera === 'locked') { const step = dt * fast; if (k('a') || k('d')) { const [a, b] = windowAt(timeAt(F, 0.5), 0.5 + (k('d') - k('a')) * step * 0.6, F.s); animation = null; clearPreset(); setView(a, b); } if (k('w') || k('s')) zoomAt(innerWidth / 2, innerHeight / 2, Math.exp((k('w') - k('s')) * step * 1.4)); return; }
+  const distance = camera.position.distanceTo(controls.target); const speed = Math.max(4, distance * 0.45) * dt * fast;
+  camera.getWorldDirection(forward); forward.y = 0; if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1); forward.normalize(); side.crossVectors(forward, UP).normalize();
+  const move = new THREE.Vector3().addScaledVector(forward, (k('w') - k('s')) * speed).addScaledVector(side, (k('d') - k('a')) * speed).addScaledVector(UP, (k('e') - k('q')) * speed);
+  camera.position.add(move); controls.target.add(move);
+  // Looking around turns the view about the camera itself.
+  const yaw = (k('arrowleft') - k('arrowright')) * dt * 1.2 * fast; const pitch = (k('arrowup') - k('arrowdown')) * dt * 0.8 * fast;
+  if (yaw || pitch) { const look = controls.target.clone().sub(camera.position); look.applyAxisAngle(UP, yaw); const across = new THREE.Vector3().crossVectors(look, UP).normalize(); const turned = look.clone().applyAxisAngle(across, pitch); if (Math.abs(turned.clone().normalize().y) < 0.97) look.copy(turned); controls.target.copy(camera.position).add(look); }
+}
+let shiftDown = false; addEventListener('keydown', (event) => { if (event.key === 'Shift') shiftDown = true; }); addEventListener('keyup', (event) => { if (event.key === 'Shift') shiftDown = false; });
 function tick(clock, dt) {
+  walk(dt);
   if (animation) animation(clock);
   if (Math.abs(blend.now - blend.to) > 0.001) { blend.now += Math.sign(blend.to - blend.now) * Math.min(Math.abs(blend.to - blend.now), dt / 0.9); relayout = true; if (opt.camera === 'locked') { fitLocked(); placeLocked(true); } } else if (blend.now !== blend.to) { blend.now = blend.to; relayout = true; }
   // Curtains rise as the construction makes them, and sink when the play goes back before them.
@@ -1517,7 +1626,12 @@ function frame() {
 }
 // For captures and tests: the window on screen, and the view's state.
 window.explorer = {
-  view: () => ({ a: F.a, b: F.b, warp: F.w, camera: opt.camera, glare: opt.glare, mode: opt.mode, layout: opt.layout, depth: opt.depth, now, tau }), zoom: (x, y, factor) => zoomAt(x, y, factor), preset: (name) => preset(name, false),
+  view: () => ({ a: F.a, b: F.b, warp: F.w, camera: opt.camera, glare: opt.glare, mode: opt.mode, layout: opt.layout, depth: opt.depth, now, tau, position: camera.position.toArray().map((v) => +v.toFixed(1)) }),
+  walk: (keys, seconds) => { for (const key of keys) held.add(key); if (opt.camera === 'spin') setCamera('free'); for (let t = 0; t < seconds; t += 1 / 60) walk(1 / 60); held.clear(); controls.update(); return camera.position.toArray().map((v) => +v.toFixed(1)); }, zoom: (x, y, factor) => zoomAt(x, y, factor), preset: (name) => preset(name, false),
+  // Where each visible document stands on screen, to point at it in a test.
+  documents: () => notes.filter((light) => light.visible).map((light) => { const point = screen(light.position.x, light.position.y, light.position.z); return { id: light.userData.id, attached: light.userData.attached.length, x: Math.round(point.x), y: Math.round(point.y) }; }),
+  // Where each causal link crosses the screen, at its middle, to point at it in a test.
+  arcs: (at = 0.5) => arcTargets.map((target) => { const p = target.pts[Math.floor((target.pts.length - 1) * at)]; const point = screen(p.x, p.y, p.z); return { kind: target.relation.kind, x: Math.round(point.x), y: Math.round(point.y) }; }),
   // The time a frame takes: laid out again each frame (as while zooming or turning to layers) or steady.
   parts: (n = 20) => { const parts = { tick: () => tick(performance.now(), 1 / 60), camera: () => (opt.camera === 'locked' ? placeLocked() : controls.update()), render: () => composer.render(), labels: () => labels.render(scene, camera), declutter, labels2: () => labels2.update(), hover };
     return Object.fromEntries(Object.entries(parts).map(([name, fn]) => { const times = []; for (let i = 0; i < n; i += 1) { const t0 = performance.now(); fn(); times.push(performance.now() - t0); } times.sort((a, b) => a - b); return [name, +times[n >> 1].toFixed(2)]; })); },

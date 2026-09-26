@@ -268,6 +268,7 @@ const events = (mm.events ?? []).map((event) => {
 // Causal and other links between Events; containment is the tree, and about is a reading's reference to its record.
 const relations = (mm.event_relations ?? []).filter((relation) => relation.kind !== 'contains' && !isAboutRelation(relation)).map((relation) => ({
   source: relation.source_event_id, target: relation.target_event_id, kind: relation.kind,
+  ...(relation.description ? { description: relation.description } : {}), ...(relation.forecast_answer ? { forecast: relation.forecast_answer } : {}),
   born: birthOf('relations', relation.id ?? `${relation.source_event_id}>${relation.kind}>${relation.target_event_id}`) }));
 
 // ---- the mind: graph nodes ------------------------------------------------------------------------------------------------------
