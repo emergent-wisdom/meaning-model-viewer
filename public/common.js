@@ -1,12 +1,16 @@
 // What every view shares: which data set to open, the links a view names, and what a process is called.
 
-// The data set named by ?data=, else the server's default run, else the only data file there is.
+// The data set named by ?data=, else the server's default run. Without one, the page says how to open a run.
 export async function loadData(params) {
   let name = params.get('data');
   if (!name) { try { name = (await (await fetch('data/index.json', { cache: 'no-store' })).json()).default; } catch { name = null; } }
-  if (!name) throw new Error('No data to show: open a run with node serve.mjs --run <run folder>.');
-  const response = await fetch(`data/${encodeURIComponent(name)}.json?ts=${Date.now()}`, { cache: 'no-store' });
-  if (!response.ok) throw new Error(`There is no data set called ${name}.`);
+  const response = name ? await fetch(`data/${encodeURIComponent(name)}.json?ts=${Date.now()}`, { cache: 'no-store' }).catch(() => null) : null;
+  if (!response?.ok) {
+    const note = document.createElement('p'); note.style.cssText = 'position:fixed;inset:40% 0 auto;text-align:center;color:#c3c2b7;font:16px system-ui,sans-serif;z-index:9';
+    note.textContent = name ? `There is no data set called ${name}. ` : 'No run is open: start the viewer with node serve.mjs --run <run folder>. ';
+    const home = document.createElement('a'); home.href = './'; home.textContent = 'See what is open'; home.style.color = '#fff'; note.append(home); document.body.append(note);
+    throw new Error(note.textContent);
+  }
   return { name, data: await response.json() };
 }
 
