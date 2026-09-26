@@ -109,6 +109,8 @@
   .tip .w { display: grid; grid-template-columns: 38px 1fr; gap: 2px 8px; margin-top: 6px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .tip .w b { font-weight: 600; color: #fff; text-align: right; } .tip .w i { font-style: normal; } .tip .w .d { color: #fff; }
   .tip .split { display: flex; height: 7px; border-radius: 4px; overflow: hidden; margin-top: 7px; background: #333; } .tip .split i { display: block; height: 100%; }
+  .label.section .body { display: flex; flex-direction: column; gap: 1px; transition: opacity 0.25s; } .label.section b { color: #fff; font-size: 13px; font-weight: 600; } .label.section span { color: var(--muted); font-size: 11px; }
+  .label.group-count { color: var(--muted); font-size: 11px; } .label.ridge-name { color: #fff; font-size: 13px; font-weight: 500; opacity: 0.92; } .label.ridge-name span { display: inline-block; transition: opacity 0.25s; }
   #scene canvas.locked { cursor: grab; } #scene canvas.locked.dragging { cursor: grabbing; }
   @media (max-width: 1100px), (max-height: 760px) { .panel { top: 84px; width: 292px; max-height: calc(100vh - 150px); } .seg button { font-size: 12px; padding: 5px 4px; } }
 </style>
@@ -131,11 +133,11 @@
   <section><h2>Play</h2><div class="seg" id="modes"><button data-mode="story">The story's years</button><button data-mode="construction">The construction</button></div>
     <div class="seg" id="speeds" style="margin-top:5px"><button data-speed="0.25">¼×</button><button data-speed="0.5">½×</button><button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button></div></section>
   <section><h2>Time</h2><div class="seg" id="presets"><button data-preset="story">Story</button><button data-preset="life">A life</button><button data-preset="centuries">Centuries</button><button data-preset="world">World history</button></div><div class="note" id="span"></div></section>
-  <section><h2>Representation</h2><div class="seg" id="layouts"><button data-layout="together">Together</button><button data-layout="layers">Layers</button></div><div class="whose" id="whose"></div></section>
-  <section><h2>Depth of the tree</h2><div class="seg" id="depths"></div><div class="note" id="depth-note"></div></section>
-  <section><h2>Show <button id="all">All</button></h2><div id="kinds"></div></section>
-  <section><h2>Lenses <button id="lenses-all">All</button></h2><div id="lenses"></div></section>
-  <section class="keys-help">Keys: <b>D</b> this panel · <b>1</b>–<b>4</b> the scales · <b>L</b> layers · <b>T</b> together · <b>Space</b> play · <b>C</b> the camera · <b>G</b> the glare. Locked: scroll or pinch zooms in time, drag pans, <b>Shift</b>+scroll moves a tall view up and down. Otherwise drag turns, right-drag moves, scroll comes closer, <b>Shift</b>+scroll zooms in time.</section>
+  <section><h2>Show it as</h2><div class="seg" id="layouts"><button data-layout="together">Processes</button><button data-layout="layers">Tree</button><button data-layout="terrain">Terrain</button></div><div class="note" id="layout-note"></div><div class="whose" id="whose"></div></section>
+  <section id="depth-section"><h2>Depth of the tree</h2><div class="seg" id="depths"></div><div class="note" id="depth-note"></div></section>
+  <section id="show-section"><h2>Show <button id="all">All</button></h2><div id="kinds"></div></section>
+  <section id="lenses-section"><h2>Lenses <button id="lenses-all">All</button></h2><div id="lenses"></div></section>
+  <section class="keys-help">Keys: <b>D</b> this panel · <b>1</b>–<b>4</b> the scales · <b>T</b> processes · <b>L</b> tree · <b>R</b> terrain · <b>Space</b> play · <b>C</b> the camera · <b>G</b> the glare. Locked: scroll or pinch zooms in time, drag pans, <b>Shift</b>+scroll moves a tall view up and down. Otherwise drag turns, right-drag moves, scroll comes closer, <b>Shift</b>+scroll zooms in time.</section>
 </aside>
 <div class="tip" id="tip" hidden></div>
 <div class="qr" id="qr-panel" hidden role="dialog" aria-label="QR codes for the links"></div>

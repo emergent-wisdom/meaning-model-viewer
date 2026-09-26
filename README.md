@@ -22,16 +22,19 @@ that chooses how to show it, and the URL keeps every choice:
 - **Time.** From a single day to the model's deep past: *Story*, *A life* (press again for the next person's), *Centuries*
   and *World history*, or anywhere between (shift and scroll, or scroll when locked, zooms around the pointer). The
   axis is linear across a life and a log scale of years before the present at the scale of world history.
-- **Representation.** *Together* lays everything in one field, as the stage showed it. *Layers* stacks the model's tree
+- **Show it as.** *Processes* lays every process in one field, as the stage showed it. *Tree* stacks the model's tree
   level by level, each level a floor below and in front of the one that holds it: the world, its long developments,
   places and institutions and each person's life, their periods and change arcs, the phases of each change and the
-  moments within them, with every process at the level of what holds it.
+  moments within them, with every process at the level of what holds it. *Terrain* shows every function of the model
+  as one terrain, as the landscape showed it: each life with its periods as plateaus and its shocks as peaks, the
+  processes it runs through, what each person wants, feels and expects, and the world's long developments behind them,
+  with Events as beams, decisions as diamonds and the agent's notes and prose above.
 - **Depth** sets how far down the tree the view goes, and **Show** adds or takes away each kind of record: the named
   processes, the events that move them, decisions, love or fear, causal links, the agent's thoughts, the tree of
   Events, the subsidiary processes (each life's slow processes, the change arcs and their phases), and the prose part
   by part. **Lenses** shows each lens's readings over the records they read, with whose reading each is.
 
-Keys: `D` the panel, `1`–`4` the scales, `L` layers, `T` together, `Space` play, `C` the camera, `G` the glare.
+Keys: `D` the panel, `1`–`4` the scales, `T` processes, `L` tree, `R` terrain, `Space` play, `C` the camera, `G` the glare.
 
 The view was made for [*Twelve Words*](https://github.com/emergent-wisdom/story), the novel an agent wrote live
 with the Meaning Model at the Stockholm Claude Community event of 25 September 2026. That repo holds its run, the book
@@ -146,7 +149,7 @@ copied as it is. Each option is left out while it is as the stage showed it:
 | `glare` | `full` (the default) or `soft` |
 | `mode` | `story` (the default) or `construction`; `speed=0.25`, `0.5`, `1`, `2` or `4`; `at=` the play's position, a year or an ISO time |
 | `zoom` | `story` (the default), `life` (with `life=<first name>`), `centuries` or `world`; or `t0=` and `t1=` in years, or `focus=<event id>` |
-| `view` | `together` (the default) or `layers`; `depth=` 0 to 6 (2 by default) |
+| `view` | `together` (the processes, the default), `layers` (the tree) or `terrain`; `depth=` 0 to 6 (2 by default) |
 | `show` | any of `processes,threads,decisions,lovefear,causal,notes,events,subsidiary,prose` (the first six by default) |
 | `lenses` | `all` or lens ids |
 | `panel` | opens the Display panel |
@@ -156,14 +159,15 @@ the story, `&qr` the QR codes, `&nothoughts` hides the thoughts, and `&capture` 
 `window.__frame(t, dt)` to draw one frame at a time.
 
 The pages of earlier versions open the view with what they showed: `processes.html` as it is, `explorer.html` locked,
-in layers, with the named processes, the glare toned down and the panel open, and `landscape.html` playing the
-construction (with its `&play`, `&read`, `&live`, and `&still` as the free camera).
+as the tree with the named processes, the glare toned down and the panel open, and `landscape.html` as the terrain
+across all the model's years, playing the construction (with its `&play`, `&read`, `&live`, and `&still` as the free
+camera).
 
 ## Versions
 
 - **0.3.0** is one view, at the viewer's root: the processes view as the stage showed it, with the run, every camera,
-  the glare, both plays, and the explorer's scales, layers, depth and records in its Display panel. The explorer's and
-  the landscape's pages open it with their options.
+  the glare, both plays, the explorer's scales, tree, depth and records, and the landscape's terrain in its Display
+  panel. The explorer's and the landscape's pages open it with their options.
 - **0.2.0** opens any run with one command, and reads lens readings placed beneath their holders.
 - **0.1.0** is the landscape and the processes view as the story repo shows *Twelve Words* (The Rabbit Hole), pinned
   there as a copy.
