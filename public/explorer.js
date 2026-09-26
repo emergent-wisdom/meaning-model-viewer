@@ -766,7 +766,8 @@ function showTip(target) {
     const { lens, reading } = target; const event = byId.get(reading.eventId);
     tip.append(line('k', `A reading · ${lens.name}${reading.earlier ? ' · asked of an earlier version' : ''}`), line('v', `${holderText(reading, data.people).replace(/^\w/, (c) => c.toUpperCase())}, of: ${clip(event?.name ?? reading.eventId, 110)}`),
       line('m', reading.question ?? lens.question ?? ''));
-    if (reading.unit) tip.append(line('a', `Unit: ${reading.unit}`));
+    // A signed unit names the lens version the reading answers: lens:<id>@<signature>.
+    if (reading.unit) { const signed = reading.unit.match(/^lens:([^@]+)@(\w+)$/); tip.append(line('a', `Unit: ${signed ? `a share of this lens's reading, answering its version ${signed[2].slice(0, 8)}` : reading.unit}`)); }
     const split = document.createElement('div'); split.className = 'split';
     for (const answer of reading.answers.filter((item) => item.weight > 0).sort((a, b) => (a.key === 'remainder') - (b.key === 'remainder'))) { const i = document.createElement('i'); i.style.width = `${answer.weight * 100}%`; i.style.background = lens.colorOf(answer.key); split.append(i); }
     tip.append(split, weights(reading.answers, (key) => lens.colorOf(key)));
