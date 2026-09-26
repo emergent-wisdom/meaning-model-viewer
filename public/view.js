@@ -13,9 +13,14 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { loadData, fillLinks, linksOf, processLabel, holderText } from './common.js';
+import { partsAtTime } from './story-time.js';
 
 const params = new URLSearchParams(location.search);
 const { name: dataName, data } = await loadData(params);
+// Earlier exports guessed passage dates from word similarity. Re-extract to obtain declared links;
+// those old guesses must not be presented as authored world time by this version of the viewer.
+if (data.story) data.story.units = data.story.units.map((unit) => unit.timing ? unit
+  : { ...unit, t: null, end: null, tells: [], spans: [], timing: 'unlinked' });
 const HUES = ['#3987e5', '#d95926', '#199e70']; const WORLD = '#9085e9';
 const KIND = { causes: '#ff8a4c', enables: '#3fd3c0', realizes_forecast: '#b793ff', constrains: '#ff4d6d' };
 const LENGTH = 116; const AMP = 5.6; const ROW = 2.7; const GAP = 4.4; const NX = 400;
@@ -68,10 +73,18 @@ for (const row of rows) { row.zT = row.z; row.yT = 0; row.rise = 1; row.riseTo =
 const zFront = Math.max(...rows.map((row) => row.z)); const zBack = Math.min(...rows.map((row) => row.z));
 const rowOf = new Map(rows.map((row) => [row.measure.id, row]));
 
-// Values: linear between the authored points, held before the first and after the last. Each row on its own scale.
+// Display values: linear between the parsed samples, held before the first and after the last. Each row on its own scale.
 const valueAt = (points, t) => {
   if (t <= points[0].t) return points[0].v; if (t >= points.at(-1).t) return points.at(-1).v;
   const k = points.findIndex((p) => p.t > t); const a = points[k - 1]; const b = points[k]; return a.v + (b.v - a.v) * ((t - a.t) / (b.t - a.t));
+};
+const measurePosition = (points, t) => {
+  if (t < points[0].t) return { label: 'Held before the first sample', samples: [points[0]] };
+  if (t > points.at(-1).t) return { label: 'Held after the last sample', samples: [points.at(-1)] };
+  const exact = points.find((point) => point.t === t);
+  if (exact) return { label: 'At a display sample', samples: [exact] };
+  const next = points.findIndex((point) => point.t > t);
+  return { label: 'Linearly interpolated between samples', samples: [points[next - 1], points[next]] };
 };
 for (const row of rows) {
   const values = row.measure.points.map((p) => p.v); const unit = String(row.measure.unit ?? '');
@@ -87,8 +100,21 @@ const format = (row, v) => {
   if (/GBP/.test(unit)) return money(v, '£'); if (/USD/.test(unit)) return money(v, '$');
   if (/hours/.test(unit)) return `${v.toFixed(1)} h`; if (/0-10/.test(unit)) return `${v.toFixed(1)} of 10`;
   if (/share of normal/.test(unit)) return `${Math.round(v * 100)}%`; if (/0-1|share/.test(unit)) return v.toFixed(2);
-  return Math.round(v).toLocaleString('en-GB');
+  return v.toLocaleString('en-GB', { maximumSignificantDigits: 6 });
 };
+function measureValueLines(row, t) {
+  const position = measurePosition(row.measure.points, t);
+  const lines = [['num', format(row, valueAt(row.measure.points, t))], ['a', position.label]];
+  for (const point of position.samples) {
+    const origin = point.valueSource === 'range_midpoint' ? 'Source range midpoint'
+      : point.valueSource === 'inferred_zero' ? 'Zero inferred from the source wording'
+        : point.valueSource === 'parsed' ? 'Parsed value' : 'Display sample; source detail unavailable';
+    const date = point.dateSource === 'inferred' ? ' · date inferred' : point.dateSource === 'parsed' ? ' · date positioned from source wording' : '';
+    lines.push(['a', `${origin}: ${format(row, point.v)} at ${month(point.t)}${date}`]);
+  }
+  for (const text of new Set(position.samples.map((point) => point.text).filter(Boolean))) lines.push(['a', `Source: “${text}”`]);
+  return lines;
+}
 
 // ---- time: an axis from a moment to deep time ----------------------------------------------------------------------------
 // A view is a window [a, b] of years, by default the story's. Its mapping to the screen blends a linear scale with a log
@@ -390,7 +416,7 @@ for (const event of data.events) {
   for (const row of touched) {
     const stem = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)), additive('#ffffff', 0.35)); stem.frustumCulled = false; group.add(stem); group.userData.lines.push(stem);
     const s = spark('#ffffff', 1.5); s.userData.hover = { kind: 'Event', title: event.label, text: event.description, about: touched.map((item) => NAMES[item.measure.id] ?? item.measure.id),
-      values: touched.map((item) => `${NAMES[item.measure.id] ?? item.measure.id}: ${format(item, valueAt(item.measure.points, event.start))}`) }; group.add(s); eventSparks.push(s); group.userData.sparks.push(s);
+      values: touched.map((item) => `${NAMES[item.measure.id] ?? item.measure.id}: ${format(item, valueAt(item.measure.points, event.start))} · ${measurePosition(item.measure.points, event.start).label}`) }; group.add(s); eventSparks.push(s); group.userData.sparks.push(s);
   }
   if (touched.length > 1) { const link = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(touched.length * 3), 3)), additive('#fff3d6', 0.9)); link.frustumCulled = false; group.add(link); group.userData.link = link; }
   field.add(group); threads.push(group);
@@ -898,11 +924,11 @@ function applyTerrain() {
   terrain.threads.geometry.setDrawRange(0, terrain.threadCount * 2); terrain.threads.visible = opt.edges && thoughts;
   drawTerrainArcs();
 }
-// The number a ridge stands for where the pointer is: a named process's exact value, a series' share of its main answer, a
+// The number a ridge stands for where the pointer is: a named process's displayed value, a series' share of its main answer, a
 // life's level (1 at a shock's height, 0.28 through a period), or how busy a process or development is against its busiest.
 function terrainNumber(row, t, u) {
   const sample = row.samples?.[Math.max(0, Math.min(TNX - 1, Math.round(u * (TNX - 1))))] ?? 0;
-  if (row.kind === 'named') { const field2 = rowOf.get(row.id.slice(6)); if (field2) return [['num', format(field2, valueAt(field2.measure.points, Math.max(field2.measure.points[0].t, Math.min(field2.measure.points.at(-1).t, t))))], ['a', `Unit: ${field2.measure.unit ?? 'not given'}`]]; }
+  if (row.kind === 'named') { const field2 = rowOf.get(row.id.slice(6)); if (field2) return [...measureValueLines(field2, t), ['a', `Unit: ${field2.measure.unit ?? 'not given'}`]]; }
   if (row.kind === 'series') return [['num', `${Math.round(sample * 100)}%`], ['a', 'The share of its main answer at this moment']];
   if (row.kind === 'life') return [['num', sample.toFixed(2)], ['a', '1 is a shock at its height, 0.28 a period of the life']];
   return [['num', `${Math.round(sample * 100)}%`], ['a', 'How much happens in it here, against its busiest moment']];
@@ -1074,8 +1100,10 @@ function apply() {
     setText('clock', isStory() ? month(Math.min(now, T1 - 0.01)) : momentText(Math.min(now, F.b - 0.01)));
     const drawn = (thread) => Math.max(thread.userData.t, F.a);
     const latest = threads.filter((thread) => thread.userData.t <= now && inView(thread.userData.t, 0.2)).sort((a, b) => drawn(b) - drawn(a))[0];
-    const part = storyParts[partNow()];
-    setText('kind', `${latest ? momentText(drawn(latest)) : 'The story'}${part ? ` · Part ${part.n}: ${part.title}` : ''}`);
+    const currentParts = partsNow().map((i) => storyParts[i]);
+    const partCaption = currentParts.length === 1 ? `Part ${currentParts[0].n}: ${currentParts[0].title}`
+      : currentParts.length ? `Parts ${currentParts.map((part) => part.n).join(', ')}` : '';
+    setText('kind', `${latest ? momentText(drawn(latest)) : 'The story'}${partCaption ? ` · ${partCaption}` : ''}`);
     setText('text', latest ? clip(`${latest.userData.event.label} ${latest.userData.event.description ?? ''}`, 330) : '');
   }
   showStats();
@@ -1264,7 +1292,7 @@ fillLinks(document.getElementById('repos'), data);
 document.getElementById('title').textContent = titleText; document.title = titleText;
 const inStoryThreads = threads.filter((thread) => thread.userData.t >= T0 - 0.2 && thread.userData.t <= T1);
 const FIELD_SUB = `${measures.length} processes the agent modeled for the story, each on its own scale, `
-  + `and the ${inStoryThreads.length} events that move them. The heights follow each process's authored path in the model.`;
+  + `and the ${inStoryThreads.length} events that move them. The heights interpolate samples parsed from each process's source wording.`;
 document.getElementById('sub').textContent = FIELD_SUB;
 const tile = (name, value) => `<div class="stat"><div class="value">${value}</div><div class="name">${name}</div></div>`;
 showStats();
@@ -1298,9 +1326,9 @@ const inline = (text) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&
   .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
 // The parts the play has come to: in the story's years those whose moment has come, in the construction those the agent
 // had written by then, and the title always.
-const readerUnits = () => (data.story?.units ?? []).filter((unit) => unit.role === 'document_root' || shownByPlay(unit.t, bornAt(unit)));
+const readerUnits = (requested = null) => (data.story?.units ?? []).filter((unit) => unit.id === requested || unit.role === 'document_root' || shownByPlay(unit.t, bornAt(unit)));
 function renderReader(unitId = null) {
-  const body = document.getElementById('reader-body'); body.replaceChildren(); let target = null; const units = readerUnits(); readerShown = units.length;
+  const body = document.getElementById('reader-body'); body.replaceChildren(); let target = null; const units = readerUnits(unitId); readerShown = units.length;
   for (const unit of units) unit.text.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).forEach((block, i) => {
     const heading = block.match(/^(#{1,4})\s+([\s\S]*)$/);
     const element = document.createElement(heading ? `h${heading[1].length}` : 'p');
@@ -1342,22 +1370,22 @@ if (storyParts.length) {
     button.addEventListener('click', () => goToPart(part)); document.getElementById('parts').append(button);
   }
 }
-const partSpan = (part) => [part.unit.t, storyParts[part.n]?.unit.t ?? T1];
-function partNow() {
-  if (building()) { let at = -1; storyParts.forEach((part, i) => { if (bornAt(part.unit) <= tau) at = i; }); return at; }
-  if (atEnd && !playing) return -1;
-  let at = -1; storyParts.forEach((part, i) => { if (Number.isFinite(part.unit.t) && part.unit.t <= now) at = i; }); return at;
+const partSpan = (part) => [part.unit.t, part.unit.end];
+function partsNow() {
+  if (building()) { let at = -1; storyParts.forEach((part, i) => { if (bornAt(part.unit) <= tau) at = i; }); return at < 0 ? [] : [at]; }
+  if (atEnd && !playing) return [];
+  return partsAtTime(storyParts.map((part) => part.unit), now);
 }
 function syncStrip() {
-  const at = partNow(); if (at === partShown) return; partShown = at;
-  storyParts.forEach((part, i) => { part.el.classList.toggle('on', i === at); part.el.classList.toggle('read', at >= 0 && i < at); });
+  const at = partsNow(); const key = `${building()}:${at.join(',')}`; if (key === partShown) return; partShown = key;
+  storyParts.forEach((part, i) => { part.el.classList.toggle('on', at.includes(i)); part.el.classList.toggle('read', building() && at.length > 0 && i < at[0]); });
 }
 function partLines(part) {
   const [a, b] = partSpan(part); const tells = (part.unit.tells ?? []).map((tell) => byId.get(tell.eventId)).filter(Boolean);
   return [['k', `Part ${part.n} of ${storyParts.length} · ${part.words.toLocaleString('en-GB')} words`], ['v', part.unit.title || part.title],
-    ['m', Number.isFinite(a) ? `In the world: ${month(a)}${Number.isFinite(b) && b > a + 0.05 ? ` to ${month(b)}` : ''}` : 'Where it stands in the world is not known'],
-    ...(tells.length ? [['a', 'The moments it tells, matched by its words: the model does not link its parts to Events'], ...tells.map((event) => ['num-line', `${timeText(event.start, 2)}: ${clip(event.label, 90)}`])] : []),
-    ['a', 'Click to go there and read it']];
+    ['m', Number.isFinite(a) ? `Linked Events span: ${month(a)}${Number.isFinite(b) && b > a + 0.05 ? ` to ${month(b)}` : ''}` : part.unit.timing === 'undated' ? 'Its linked Events have no available dates' : 'World time is unlinked; this part remains in reading order'],
+    ...(tells.length ? [['a', 'Events linked as depicted by this part:'], ...tells.map((event) => ['num-line', `${Number.isFinite(event.start) ? timeText(event.start, 2) : 'Undated'}: ${clip(event.label, 90)}`])] : []),
+    ['a', Number.isFinite(a) ? 'Click to visit its first linked Event and read it' : 'Click to read it']];
 }
 function showPartTip(part, event) {
   tip.replaceChildren(...partLines(part).map(([cls, text]) => tipLine(cls, text))); tip.hidden = false; const w = tip.offsetWidth; const h = tip.offsetHeight;
@@ -1366,7 +1394,11 @@ function showPartTip(part, event) {
 function goToPart(part) {
   stop();
   if (building()) { tau = Math.max(C0, Math.min(C1, bornAt(part.unit))); atEnd = tau >= C1; }
-  else if (Number.isFinite(part.unit.t)) { now = Math.max(F.a, Math.min(F.b, part.unit.t + 0.002)); atEnd = false; }
+  else if (Number.isFinite(part.unit.t)) {
+    const t = part.unit.t;
+    if (t < F.a || t > F.b) { clearPreset(); setView(...windowAt(t, 0.5, F.s)); }
+    now = Math.max(F.a, Math.min(F.b, t)); atEnd = false;
+  }
   apply(); syncURL(); document.getElementById('reader').hidden = false; renderReader(part.unit.id);
 }
 
@@ -1629,7 +1661,7 @@ function hover() {
   let arc = null; if (!hit) { let bestArc = 8; for (const target of arcTargets) for (let i = 1; i < target.pts.length; i += 1) { const a = screen(target.pts[i - 1].x, target.pts[i - 1].y, target.pts[i - 1].z); const b = screen(target.pts[i].x, target.pts[i].y, target.pts[i].z); if (!a.ok || !b.ok) continue; const d = distToSeg(pointerAt, a, b); if (d < bestArc) { bestArc = d; arc = target; } } }
   if (arc !== litArc) { litArc = arc; drawArcs(); }
   if (arc) { if (lit) { lit = null; drawNotes(); } renderer.domElement.style.cursor = 'help'; tip.replaceChildren(...arcLines(arc).map(([cls, text]) => tipLine(cls, text))); placeTip(); return; }
-  // A curtain under the pointer: its process's exact value at that moment.
+  // A curtain under the pointer: its process's display value and how it was obtained.
   const curtain = hit ? null : curtainAt(pointerAt); curtainMark.visible = Boolean(curtain) && field.visible;
   if (curtain) { if (lit) { lit = null; drawNotes(); } renderer.domElement.style.cursor = 'crosshair'; tip.replaceChildren(...curtainLines(curtain).map(([cls, text]) => tipLine(cls, text))); placeTip(); return; }
   if (!hit) { tip.hidden = true; renderer.domElement.style.cursor = ''; if (lit) { lit = null; drawNotes(); } return; }
@@ -1646,7 +1678,7 @@ function hover() {
   placeTip();
 }
 let quietAt = null; // where a click opened the details: no tooltip there until the pointer moves
-// The curtain under a point on screen, the time there and the exact value of its process, marked on its crest.
+// The curtain under a point on screen, the time there and the displayed value of its process, marked on its crest.
 const wallRay = new THREE.Raycaster(); const wallNdc = new THREE.Vector2(); const curtainMark = spark('#ffffff', 1.3); curtainMark.visible = false; field.add(curtainMark);
 // The bright top line nearest the pointer names the curtain (they stand one behind another); else the curtain in front of it.
 function curtainAt(point) {
@@ -1669,10 +1701,7 @@ function curtainAt(point) {
   curtainMark.position.set(X(t), p.y + heightAt(row, t) + 0.05, p.z); return { row, t };
 }
 function curtainLines({ row, t }) {
-  const points = row.measure.points; const v = valueAt(points, t); const next = points.findIndex((point) => point.t > t);
-  const around = next === 0 ? `Held at its first authored value, ${format(row, points[0].v)} in ${month(points[0].t)}` : next < 0 ? `Held at its last authored value, ${format(row, points.at(-1).v)} in ${month(points.at(-1).t)}`
-    : `Between the authored ${format(row, points[next - 1].v)} in ${month(points[next - 1].t)} and ${format(row, points[next].v)} in ${month(points[next].t)}`;
-  return [['k', `${row.group.label} · a named process`], ['v', NAMES[row.measure.id] ?? row.measure.id], ['num', format(row, v)], ['m', momentText(t)], ['a', around],
+  return [['k', `${row.group.label} · a named process`], ['v', NAMES[row.measure.id] ?? row.measure.id], ['m', momentText(t)], ...measureValueLines(row, t),
     ['a', `Unit: ${row.measure.unit ?? 'not given'} · on its own scale, ${format(row, row.range[0])} to ${format(row, row.range[1])}`]];
 }
 function placeTip() { if (quietAt && pointerAt && quietAt.x === pointerAt.x && quietAt.y === pointerAt.y) { tip.hidden = true; return; } quietAt = null; tip.hidden = false; const w = tip.offsetWidth; const h = tip.offsetHeight; tip.style.left = `${Math.min(innerWidth - w - 12, pointerAt.x + 16)}px`; tip.style.top = `${Math.min(innerHeight - h - 12, Math.max(12, pointerAt.y + 16))}px`; }
@@ -1700,7 +1729,7 @@ function showExtraTip(target) {
     tip.append(tipLine('a', `At the record's time, ${timeText(reading.t, 1)}${reading.confidence ? ` · confidence ${reading.confidence.toFixed(2)}` : ''}${reading.estimated ? ' · estimated' : ' · authored'} · evidence cutoff not recorded`));
   } else if (target.kind === 'prose') {
     const { unit } = target; tip.append(tipLine('k', `Prose · ${timeText(unit.t, 2)}`), tipLine('v', unit.title ?? ''), tipLine('m', clip(unit.text.replace(/^#+\s+.*$/m, '').trim(), 420)));
-    tip.append(tipLine('a', `Tells: ${(unit.tells ?? []).map((tell) => clip(byId.get(tell.eventId)?.label, 44)).join(' · ')}`), tipLine('a', 'Placed among the moments it shares the most words with, in story order. Click to read it.'));
+    tip.append(tipLine('a', `Depicts: ${(unit.tells ?? []).map((tell) => clip(byId.get(tell.eventId)?.label, 44)).join(' · ')}`), tipLine('a', 'Placed by its declared Event links. Click to read it.'));
   }
   placeTip();
 }

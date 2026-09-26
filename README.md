@@ -49,12 +49,17 @@ anything in the view to read what it is, and click it to keep that open beside t
 
 **The story's own time.** Below the view, a strip holds the story's parts in reading order, each as long as its words,
 and lights the part the play is in (in the construction, the part the agent was writing); the caption names it. Point
-at a part to see where it stands in the world's years, click it to go there and read it. The model does not link a
-story's parts to its Events, so where each part stands is matched by its words.
+at a part to see its linked Events, and click it to visit its first linked moment and read it. World time comes from
+the passage's declared `renders` links in the story graph. A flashback can go backwards in world time without moving
+in reading order, and several parts can depict the same Event. Parts without dated links stay readable in the strip
+and say that their world time is unlinked or undated. A depiction link does not mean every fact in that Event has been
+revealed to the reader.
 
-**Numbers.** Pointing at a curtain gives its process's exact value at that moment with its unit, and the authored values
-on either side; an event gives the value of each process it moves; on the terrain, a ridge gives its number. Clicking
-keeps it open beside the view.
+**Numbers.** Pointing at a curtain gives its displayed value and unit, alongside the source wording. These paths are
+parsed from the model's prose support: values between samples are interpolated, values beyond the samples are held,
+and a stated range is drawn at its midpoint. The tooltip identifies those estimates and any inferred dates. An event
+gives the displayed value of each process it moves; on the terrain, a ridge gives its number. Clicking keeps it open
+beside the view.
 
 Keys: `W` `A` `S` `D` walk through the view, `Q` and `E` go down and up, the arrows look around and `Shift` goes faster
 (the first step stops the spin; locked, `A` and `D` move through time and `W` and `S` zoom it); `1`–`4` the scales,
@@ -105,6 +110,14 @@ if it is not in `rust-engine/target/release`).
 
 `node extract.mjs --run <run folder> --out <file.json>` makes the view's data file for a run on its own, and
 `node serve.mjs --data <folder>` serves a folder of such files.
+
+The export includes the author's construction history, notes and readings. By default the extractor uses all scopes
+found in the run. `--scopes` adds scopes; it does not filter the export for publication. Review a data file before
+sharing it. Source releases of this viewer contain no book or run data.
+
+For a static website, publish `public/` together with the selected exports at `data/<name>.json` and a
+`data/index.json` such as `{"default":"story","runs":[{"name":"story","label":"Twelve Words"}]}`.
+The QR images need the local server's `/qr.svg` endpoint and are hidden when it is unavailable.
 
 ## The run format: `meaning-model-run/1`
 
@@ -189,6 +202,8 @@ camera).
 
 ## Versions
 
+- **0.3.1** places passages by their declared Event links, preserves flashbacks, leaves unlinked world time unknown,
+  and labels parsed, interpolated and held display values with their source wording.
 - **0.3.0** is one view, at the viewer's root: the processes view as the stage showed it, with the run, every camera,
   shining or less, both plays, the explorer's scales, tree, depth and records, and the landscape's terrain in a small
   toolbar on the view, and anything in it can be clicked to read what it is. The explorer's and the landscape's pages
