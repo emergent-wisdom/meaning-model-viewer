@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// The Meaning Model viewer: open a run in the explorer, the processes view and the landscape.
+// The Meaning Model viewer: open runs in one view, at the server's root.
 //
 //   node serve.mjs --run <run folder> [--run <another> ...] [--live] [--port 8765]
 //   node serve.mjs --data <folder of data files>
 //
 // Each run is read with extract.mjs into a data file kept in memory; the run is never written to and its own server is
 // never called (the extractor takes an online backup of its engine state). After a --run, --name, --title, --config,
-// --log, --graph and --state apply to that run (see extract.mjs). --live reads every run again each minute, and a view
-// opened with &live follows it. PORT, or --port, sets the port.
+// --log, --graph and --state apply to that run (see extract.mjs), and --label names it in the view's choice of runs.
+// --live reads every run again each minute, and a view opened with &live follows it. PORT, or --port, sets the port.
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
@@ -28,10 +28,11 @@ for (let i = 0; i < argv.length; i += 1) {
   const arg = argv[i];
   if (arg === '--run') { current = { folder: resolve(argv[i += 1]), flags: [] }; runs.push(current); }
   else if (RUN_FLAGS.has(arg)) { if (!current) throw new Error(`${arg} belongs after the --run it is for.`); current.flags.push(arg, argv[i += 1]); }
+  else if (arg === '--label') { if (!current) throw new Error('--label belongs after the --run it is for.'); current.label = argv[i += 1]; }
   else if (arg === '--live') global.live = true;
   else if (arg === '--port') global.port = Number(argv[i += 1]);
   else if (arg === '--data') global.data.push(resolve(argv[i += 1]));
-  else if (arg === '--help' || arg === '-h') { console.log(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 11).map((line) => line.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+  else if (arg === '--help' || arg === '-h') { console.log(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).map((line) => line.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
   else if (!arg.startsWith('--') && !runs.length) { current = { folder: resolve(arg), flags: [] }; runs.push(current); }
   else throw new Error(`Unknown argument ${arg}: node serve.mjs --help`);
 }
@@ -71,8 +72,10 @@ if (runs.length) console.log(`Reading ${runs.length === 1 ? 'the run' : `${runs.
 const results = await Promise.all(runs.map(extract));
 if (runs.length && !results.some(Boolean)) { console.error('No run could be read.'); process.exit(1); }
 if (global.live && runs.length) setInterval(() => { for (const run of runs) extract(run); }, 60000).unref?.();
+// The runs the view can choose between, each by its label (else its title, told apart by its name when titles repeat).
 const index = () => {
-  const list = [...sets].map(([name, set]) => ({ name, title: set.title, generatedAt: set.generatedAt, lastCall: set.lastCall, events: set.events, live: Boolean(set.run && global.live) }));
+  const list = [...sets].map(([name, set]) => ({ name, title: set.title, label: runs.find((run) => run.key === name)?.label ?? null, generatedAt: set.generatedAt, lastCall: set.lastCall, events: set.events, live: Boolean(set.run && global.live) }));
+  for (const item of list) if (!item.label) item.label = list.filter((other) => other.title === item.title).length > 1 ? `${item.title ?? item.name} (${item.name})` : item.title ?? item.name;
   return JSON.stringify({ default: runs.find((run) => sets.has(run.key))?.key ?? list[0]?.name ?? null, runs: list });
 };
 
@@ -100,5 +103,4 @@ createServer(async (req, res) => {
   .listen(global.port, '127.0.0.1', () => {
     const base = `http://localhost:${global.port}`;
     console.log(`\n${base}/  ${sets.size ? [...sets.keys()].join(', ') : 'no data yet: pass --run <run folder>'}`);
-    for (const view of ['explorer', 'processes', 'landscape']) console.log(`  ${base}/${view}.html`);
   });

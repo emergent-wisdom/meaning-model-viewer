@@ -978,6 +978,22 @@ const KINDS = [
 ];
 const depthNote = { 0: 'The world alone.', 1: 'The world and what it holds: long developments, lives, places and institutions.', 2: 'With the periods, change arcs and parts of each.', 3: 'With the phases of each change and the moments in them.', 4: 'With the moments within moments.', 5: 'Deeper still.', 6: 'The whole tree.' };
 const panel = document.getElementById('panel');
+// Which run: every run the viewer has open. Choosing one opens the view on it, keeping how the view shows it.
+fetch('data/index.json', { cache: 'no-store' }).then((response) => response.json()).then((index) => {
+  const runs = index.runs ?? []; if (runs.length < 2) return;
+  const box = document.getElementById('runs'); document.getElementById('runs-section').hidden = false;
+  for (const run of runs) {
+    const button = document.createElement('button'); button.classList.toggle('on', run.name === dataName); button.textContent = run.label ?? run.title ?? run.name;
+    const when = run.lastCall ? new Date(run.lastCall).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) : null;
+    const meta = document.createElement('span'); meta.textContent = [`${run.events} Events`, when ? `last worked on ${when} UTC` : null].filter(Boolean).join(' · '); button.append(meta);
+    button.addEventListener('click', () => {
+      if (run.name === dataName) return; const next = new URLSearchParams(location.search); next.set('data', run.name); next.set('panel', '');
+      for (const key of ['at', 'pose', 'focus', 'lenses']) next.delete(key);
+      location.search = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/=(&|$)/g, '$1');
+    });
+    box.append(button);
+  }
+}).catch(() => { /* one run, or none to choose from */ });
 function openPanel(on) { panel.hidden = !on; document.body.classList.toggle('panel-open', on); document.getElementById('display').classList.toggle('on', on); document.getElementById('display').setAttribute('aria-expanded', String(on)); if (opt.camera === 'locked') { fitLocked(); placeLocked(true); } syncURL(); dirty = true; }
 document.getElementById('display').addEventListener('click', () => openPanel(panel.hidden));
 document.getElementById('panel-close').addEventListener('click', () => openPanel(false));
@@ -1054,7 +1070,7 @@ function syncURL() {
     if (opt.lenses.size) next.set('lenses', opt.lenses.size === lensList.length ? 'all' : [...opt.lenses].join(','));
     if (!atEnd && !playing) next.set('at', opt.mode === 'construction' ? new Date(tau).toISOString() : now.toFixed(4)); else if (!atEnd && opt.mode === 'construction') next.set('at', new Date(tau).toISOString());
     if (!panel.hidden) next.set('panel', ''); if (!document.getElementById('reader').hidden) next.set('read', ''); if (!qrPanel.hidden) next.set('qr', '');
-    const query = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/=(&|$)/g, '$1');
+    const query = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/\+/g, '%20').replace(/=(&|$)/g, '$1');
     history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}`);
   }, 400);
 }
