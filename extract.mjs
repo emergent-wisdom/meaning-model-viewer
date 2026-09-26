@@ -290,16 +290,150 @@ const measures = (model.processes ?? []).filter((process) => !String(process.id)
     events: events.filter((event) => event.processIds.includes(process.id)).map((event) => event.id), born: birthOf('processes', process.id) };
 });
 
+// ---- the explorer: the whole Event tree, every process in it, and the lenses' readings -------------------------------------
+// Each Event's depth in the containment tree, its role there and whose it is. An Event without an interval (the world, an
+// inner root, a slow process) spans what it holds, else what holds it, so every Event has a place in time.
+const referents = (mm.referents ?? []).map((referent) => ({ id: referent.id, name: nameOf(referent), life: referent.lifecycle_event_id ?? null,
+  person: listed.some((person) => person.id === referent.id), who: clip(referent.boundary, 240) }));
+const lifeOf = new Map(referents.filter((referent) => referent.life).map((referent) => [referent.life, referent.id]));
+const innerRoots = new Map((mm.context_roots ?? []).filter((root) => root.kind === 'inner').map((root) => [root.event_id, [index.events.get(root.event_id)?.participants?.subject ?? null].flat()[0]]));
+const depthOf = new Map();
+{ const queue = (mm.events ?? []).filter((event) => !index.parents.has(event.id)).map((event) => [event.id, 0]);
+  while (queue.length) { const [id, depth] = queue.shift(); if (depthOf.has(id)) continue; depthOf.set(id, depth); for (const child of index.children.get(id) ?? []) queue.push([child, depth + 1]); } }
+const treeRoots = (mm.events ?? []).filter((event) => !index.parents.has(event.id)).map((event) => event.id);
+const arcIds = new Set([...index.arcsOf.values()].flat());
+const phaseOf = (id) => { const match = id.match(/^(.*)\.(anticipation|focal_change|adaptation)$/); return match && arcIds.has(match[1]) ? match[2] : null; };
+const ownerOf = (id) => { for (let at = id, hops = 0; at && hops < 64; at = parentOf(at), hops += 1) { if (lifeOf.has(at)) return lifeOf.get(at); if (innerRoots.has(at)) return innerRoots.get(at); } return null; };
+const reach = new Map();
+const reachOf = (id) => {
+  if (reach.has(id)) return reach.get(id); reach.set(id, null);
+  const event = index.events.get(id); let span = start(event) !== null ? [toYear(start(event)), toYear(end(event) ?? start(event))] : null;
+  if (!span) { const inside = (index.children.get(id) ?? []).map(reachOf).filter(Boolean); if (inside.length) span = [Math.min(...inside.map((s) => s[0])), Math.max(...inside.map((s) => s[1]))]; }
+  reach.set(id, span); return span;
+};
+for (const event of events) {
+  const depth = depthOf.get(event.id) ?? 0; const span = event.span;
+  event.depth = depth; event.owner = ownerOf(event.id);
+  event.role = depth === 0 ? 'world' : lifeOf.has(event.id) ? 'life' : innerRoots.has(event.id) ? 'inner' : /\.is\.[a-z]+$/.test(event.id) ? 'slow' : arcIds.has(event.id) ? 'arc'
+    : phaseOf(event.id) ? 'phase' : periodEvents.has(event.id) ? 'period' : depth === 1 ? 'development' : span !== null && span > 1 ? 'part' : 'moment';
+  if (event.role === 'phase') event.phase = phaseOf(event.id);
+  let span2 = reachOf(event.id);
+  for (let at = event.parent; !span2 && at; at = parentOf(at)) span2 = reachOf(at);
+  event.reach = span2 ?? (extent ? [extent.start, extent.end] : null);
+}
+
+// Every process with its place in the tree. A scaffold process (a life, its slow processes, a change arc and its phases)
+// lives on the Event the scaffold made for it; a named process sits under the life or thing it is about (its frame or
+// its id), else under the Event that holds everything that moves it. A process's parent is the process of the nearest
+// Event above its own that has one.
+const homeOfScaffold = new Map();
+for (const event of mm.events ?? []) for (const id of event.process_ids ?? []) {
+  if (!String(id).startsWith('profile.')) continue; const known = homeOfScaffold.get(id);
+  if (!known || (depthOf.get(event.id) ?? 0) < (depthOf.get(known) ?? 0)) homeOfScaffold.set(id, event.id);
+}
+const processAt = new Map(); for (const [id, eventId] of homeOfScaffold) if (!processAt.has(eventId)) processAt.set(eventId, id);
+const processAbove = (eventId) => { for (let at = eventId, hops = 0; at && hops < 64; at = parentOf(at), hops += 1) if (processAt.has(at)) return processAt.get(at); return null; };
+const chainOf = (id) => { const chain = []; for (let at = id; at && chain.length < 64; at = parentOf(at)) chain.push(at); return chain; };
+const commonAncestor = (ids) => { if (!ids.length) return null; let common = chainOf(ids[0]); for (const id of ids.slice(1)) { const up = new Set(chainOf(id)); common = common.filter((item) => up.has(item)); } return common[0] ?? null; };
+const byFirstName = new Map(people.map((person) => [person.name.split(' ')[0].toLowerCase(), person]));
+const processes = (model.processes ?? []).map((process) => {
+  const id = String(process.id); const scaffold = id.startsWith('profile.'); const support = (process.support ?? []).join(' ; ');
+  const movers = events.filter((event) => event.processIds.includes(id)).map((event) => event.id);
+  let home = homeOfScaffold.get(id) ?? null;
+  if (!scaffold) {
+    const prefix = id.split('.')[0].toLowerCase(); const frame = String(process.reference_frame ?? '').match(/^person:(.+)$/)?.[1]?.toLowerCase();
+    const person = byFirstName.get(frame) ?? byFirstName.get(prefix); const thing = referents.find((referent) => referent.life && referent.id.split('.').at(-1) === prefix);
+    const common = commonAncestor(movers);
+    home = person?.life?.eventId ?? thing?.life ?? (common && (depthOf.get(common) ?? 0) > 0 ? common : treeRoots[0] ?? null);
+  }
+  const role = process.scale?.semantic_role ?? null;
+  return { id, kind: scaffold ? 'scaffold' : 'named', role: scaffold ? role : null, what: scaffold ? null : clip(role, 240), unit: process.unit ?? null, frame: process.reference_frame ?? null,
+    support: clip(support, 600), points: scaffold ? [] : readPath(support).map(({ t, v }) => ({ t: +t.toFixed(4), v })), home,
+    parent: scaffold ? processAbove(parentOf(home)) : processAbove(home), depth: (depthOf.get(home) ?? 0) + (scaffold ? 0 : 1), owner: home ? ownerOf(home) : null,
+    events: movers, born: birthOf('processes', id) };
+});
+
+// The lenses, as the tool reads them from the graph (a checkout that has lenses), else read here the same way: every lens
+// node that no later version supersedes, and the built-in one. A lens's readings are the Cuts whose ids begin
+// lens.<lens>.; the built-in lens also counts Cuts that asked it in their own words before lenses had ids. A reading
+// whose answers are not the lens's present answers was given to an earlier version of it.
+const graphView = { nodes: [...nodes.values()], edges: [...edges.values()] };
+const lensList = await (async () => {
+  try { const { readLenses } = await import(`${PUBLISH}/mcp-server/src/lenses.mjs`); return readLenses(graphView); } catch { /* a release without lenses */ }
+  const found = []; for (const node of graphView.nodes) { if (node.node_type !== 'understanding.lens') continue; try { const data = JSON.parse(node.text)?.data; if (data?.schema === 'meaning-model-lens/v1') found.push({ nodeId: node.id, data }); } catch { /* not a lens */ } }
+  const superseded = new Set(graphView.edges.filter((edge) => edge.relation === 'supersedes' && edge.target?.kind === 'node').map((edge) => edge.target.node_id));
+  const defined = found.filter((node) => !superseded.has(node.nodeId)).map((node) => ({ ...node.data, nodeId: node.nodeId, builtIn: false, version: found.filter((other) => other.data.id === node.data.id).length }));
+  const builtIn = { id: 'fear-love', name: 'Fear or love', builtIn: true, appliesTo: ['act'], answers: null, matchesQuestion: /\bfear\b[^?]*\blove\b|\blove\b[^?]*\bfear\b/iu,
+    question: 'What kinds of reasons lie behind {subject}: is it primarily out of fear or out of love, and what does that fear or love ask of the person?' };
+  return [...(defined.some((lens) => lens.id === 'fear-love') ? [] : [builtIn]), ...defined];
+})();
+const liveCuts = allCuts.filter((cut) => !cut.withdrawn);
+const lenses = lensList.map((lens) => {
+  const own = liveCuts.filter((cut) => String(cut.id).startsWith(`lens.${lens.id}.`)); const answered = new Set(own.map((cut) => cut.parent_event_id));
+  const older = lens.matchesQuestion ? liveCuts.filter((cut) => !String(cut.id).startsWith('lens.') && lens.matchesQuestion.test(String(cut.question ?? '')) && !answered.has(cut.parent_event_id)) : [];
+  const keys = lens.answers ? new Set([...lens.answers.map((answer) => answer.key), 'remainder']) : null;
+  const readings = [...own, ...older].map((cut) => {
+    const provenance = (cut.provenance ?? []).join(' ; ');
+    return { cutId: cut.id, eventId: cut.parent_event_id, t: toYear(start(index.events.get(cut.parent_event_id))), question: clip(cut.question, 220),
+      answers: (cut.answers ?? []).slice().sort((a, b) => b.weight - a.weight).map((answer) => ({ key: answer.key, weight: +answer.weight.toFixed(4) })),
+      ...(own.includes(cut) ? {} : { older: true }), ...(keys && (cut.answers ?? []).some((answer) => !keys.has(answer.key)) ? { earlier: true } : {}),
+      confidence: Number(provenance.match(/confidence ([\d.]+)/)?.[1] ?? NaN) || null, estimated: /^estimator:/.test(provenance), born: birthOf('cuts', cut.id) };
+  }).sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity));
+  return { id: lens.id, name: lens.name ?? lens.id, question: lens.question ?? null, appliesTo: lens.appliesTo ?? [], answers: lens.answers ?? null, why: clip(lens.why, 900) || null,
+    source: clip(lens.source, 400) || null, trajectory: clip(lens.trajectory, 400) || null, builtIn: Boolean(lens.builtIn), nodeId: lens.nodeId ?? null, version: lens.version ?? 1,
+    about: (lens.about ?? []).map((target) => target.id), readings };
+}).filter((lens) => lens.readings.length || !lens.builtIn);
+// Notes about a life or a process sit at the Event that holds it.
+for (const edge of graphEdges) {
+  if (edge.target?.anchorKind === 'referent') edge.target.home = referents.find((referent) => referent.id === edge.target.anchor)?.life ?? null;
+  if (edge.target?.anchorKind === 'process') edge.target.home = processes.find((process) => process.id === edge.target.anchor)?.home ?? null;
+}
+
 // ---- the story's text, from the render ------------------------------------------------------------------------------------------
 const story = rendered && !rendered.error ? { projectionHash: rendered.projection_hash ?? null,
   units: (rendered.units ?? []).map((unit) => ({ id: unit.node_id, type: unit.node_type ?? null, role: unit.role ?? null, title: unit.title ?? null, text: String(unit.text ?? ''), born: nodeBorn.get(unit.node_id) ?? null })) } : null;
+// Where each part of the story is in the model's time: the render carries no dates, so each part takes the moments whose
+// words it shares most (the model's short Events, weighted by how rare each word is), in story order. The moments it
+// matches are the ones it tells.
+if (story) {
+  const STOP = new Set('the and for from with was were been its his her their she they them him this that these those not but then than there here what which who whom when where how all any each one two three into out over after before about again more most some such only own same too very can will just said says had has have did does done you our your are would could should like back down off'.split(' '));
+  const words = (text) => (String(text ?? '').toLowerCase().replace(/[’']/g, '').match(/\p{L}[\p{L}\d-]+/gu) ?? []).filter((word) => word.length > 2 && !STOP.has(word));
+  const moments = events.filter((event) => event.start !== null && event.span !== null && event.span < 1 && !['arc', 'phase', 'period', 'life'].includes(event.role))
+    .map((event) => ({ event, words: words(`${index.events.get(event.id)?.boundary ?? ''} ${index.events.get(event.id)?.description ?? ''}`) })).sort((a, b) => a.event.start - b.event.start);
+  const df = new Map(); for (const moment of moments) for (const word of new Set(moment.words)) df.set(word, (df.get(word) ?? 0) + 1);
+  const vector = (list) => { const v = new Map(); for (const word of list) v.set(word, (v.get(word) ?? 0) + 1); for (const [word, n] of v) v.set(word, (1 + Math.log(n)) * Math.log((moments.length + 1) / ((df.get(word) ?? 0) + 1))); return v; };
+  const cosine = (a, b) => { let dot = 0; let na = 0; let nb = 0; for (const [word, x] of a) { na += x * x; if (b.has(word)) dot += x * b.get(word); } for (const x of b.values()) nb += x * x; return dot / Math.sqrt(na * nb || 1); };
+  for (const moment of moments) moment.vector = vector(moment.words);
+  const parts = story.units.filter((unit) => unit.role !== 'document_root' && unit.text.trim());
+  const scores = parts.map((unit) => { const v = vector(words(unit.text)); return moments.map((moment) => cosine(v, moment.vector)); });
+  // The best order-keeping assignment: each part at a moment no earlier than the part before's.
+  if (parts.length && moments.length) {
+    const best = scores.map(() => new Float64Array(moments.length)); const from = scores.map(() => new Int32Array(moments.length));
+    for (let i = 0; i < parts.length; i += 1) {
+      let runMax = -Infinity; let runAt = -1;
+      for (let j = 0; j < moments.length; j += 1) {
+        if (i > 0 && best[i - 1][j] > runMax) { runMax = best[i - 1][j]; runAt = j; }
+        best[i][j] = scores[i][j] + (i > 0 ? runMax : 0); from[i][j] = runAt;
+      }
+    }
+    let j = best.at(-1).indexOf(Math.max(...best.at(-1)));
+    for (let i = parts.length - 1; i >= 0; i -= 1) {
+      const unit = parts[i]; const at = moments[j].event.start; const next = i < parts.length - 1 ? parts[i + 1].t : Infinity;
+      unit.t = at; unit.tells = moments.map((moment, k) => ({ id: moment.event.id, score: scores[i][k], t: moment.event.start })).filter((item) => item.t >= at - 0.02 && item.t <= next + 0.02)
+        .sort((a, b) => b.score - a.score).slice(0, 4).filter((item) => item.score >= 0.08).map((item) => ({ eventId: item.id, score: +item.score.toFixed(3) }));
+      j = from[i][j] >= 0 ? from[i][j] : j;
+    }
+  }
+}
+const proseTimes = story?.units.map((unit) => unit.t).filter(Number.isFinite) ?? [];
+const storyWindow = proseTimes.length >= 2 ? { start: Math.min(...proseTimes), end: Math.max(...proseTimes) } : window;
 const storyTitle = story?.units.map((unit) => unit.text.match(/^#\s+(.+)$/m)?.[1]?.trim()).find(Boolean) ?? null;
 const storyWords = story ? story.units.reduce((sum, unit) => sum + unit.text.split('\n').filter((line) => !/^\s*#/.test(line)).join(' ').split(/\s+/).filter(Boolean).length, 0) : null;
 const data = {
   // The story's own title, from its document in the graph; else the chosen world's.
   schema: 'meaning-model-stage-view/v1', generatedAt: new Date().toISOString(), run: runName, title: flag('--title') ?? storyTitle ?? title ?? runName,
   timeUnit: unit, firstCall, lastCall: calls.at(-1)?.at ?? null, headGraphHash: history.headGraphHash ?? null, modelHash: boundModel,
-  window, extent, people, events, relations, draws,
+  window, extent, storyWindow, people, events, relations, draws, referents, processes, lenses,
   graph: { nodes: graphNodes, edges: graphEdges }, story, measures, steps, toolCalls,
   totals: { events: events.length, cuts: allCuts.length - withdrawn.size, people: people.length, lives: lives.length, thoughts: graphNodes.filter((node) => node.category === 'thought').length,
     passages: graphNodes.filter((node) => node.category === 'passage').length, words: storyWords ?? graphNodes.reduce((sum, node) => sum + node.words, 0), modelRevisions: history.models.length, graphRevisions: history.revisions.length },
