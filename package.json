@@ -1,21 +1,40 @@
 {
-  "name": "story-landscape",
-  "version": "0.1.0",
-  "description": "A 3D landscape of a story as an agent builds it with the Meaning Model: every function over time, the understanding above, the construction replayed.",
+  "name": "meaning-model-viewer",
+  "version": "0.2.0",
+  "description": "Open a Meaning Model run in three views: the explorer, which zooms from a day to deep time, the processes over the story's years, and the landscape with the construction replayed.",
+  "keywords": ["meaning-model", "visualization", "world-model", "story", "three.js"],
+  "type": "module",
+  "bin": {
+    "meaning-model-viewer": "serve.mjs"
+  },
   "scripts": {
+    "start": "node serve.mjs",
     "serve": "node serve.mjs",
     "extract": "node extract.mjs"
   },
-  "license": "MIT",
-  "type": "module",
+  "files": [
+    "serve.mjs",
+    "extract.mjs",
+    "measures.mjs",
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22.18.0"
   },
   "dependencies": {
     "@emergent-wisdom/meaning-model-mcp": "^0.3.0",
-    "three": "^0.186.1"
-  },
-  "devDependencies": {
     "qrcode": "^1.5.4"
+  },
+  "author": "Henrik Westerberg",
+  "license": "MIT",
+  "homepage": "https://github.com/emergent-wisdom/meaning-model-viewer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/emergent-wisdom/meaning-model-viewer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/emergent-wisdom/meaning-model-viewer/issues"
   }
 }

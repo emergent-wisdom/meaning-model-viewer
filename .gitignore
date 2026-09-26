@@ -1,13 +1,9 @@
 node_modules/
-live.log
-*.png
-# Datasets from private runs stay local; the published story's data is committed.
-public/data/*.json
-!public/data/rabbit-hole.json
+# Data made from runs stays local.
+data/
+public/data/
 renders/
+*.sqlite
 *.sqlite-shm
 *.sqlite-wal
-!media/*
-# Local agent worktrees and settings
-.claude/
 .DS_Store
