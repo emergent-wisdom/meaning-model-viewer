@@ -7,8 +7,8 @@ serves it in one view, at the server's root.
 The view opens as the processes view showed *Twelve Words* on stage: every named process the agent modeled as a
 curtain of light on its own scale over the story's years, the events that move them as threads through every process
 they touch, the decisions the model drew, the love-or-fear split behind the acts, the causal links between events, and
-the agent's thoughts behind them, slowly turning. Press play to sweep through the years. **Display** opens a panel
-that chooses how to show it, and the URL keeps every choice:
+the agent's thoughts behind them, slowly turning. Press play to sweep through the years. Beside it, the **Display**
+panel chooses how to show it (its button folds the panel away and brings it back), and the URL keeps every choice:
 
 - **Run.** When the viewer has more than one run open, which one to show.
 - **Camera.** *Spinning*, as it always turned; *Free*, to turn it (drag), move it (right-drag) and come closer
@@ -152,14 +152,14 @@ copied as it is. Each option is left out while it is as the stage showed it:
 | `view` | `together` (the processes, the default), `layers` (the tree) or `terrain`; `depth=` 0 to 6 (2 by default) |
 | `show` | any of `processes,threads,decisions,lovefear,causal,notes,events,subsidiary,prose` (the first six by default) |
 | `lenses` | `all` or lens ids |
-| `panel` | opens the Display panel |
+| `panel` | `off` folds the Display panel away |
 
 The view also takes the stage's own: `&play` starts the play, `&still` stops the spin (the free camera), `&read` opens
 the story, `&qr` the QR codes, `&nothoughts` hides the thoughts, and `&capture` hands a recorder
 `window.__frame(t, dt)` to draw one frame at a time.
 
 The pages of earlier versions open the view with what they showed: `processes.html` as it is, `explorer.html` locked,
-as the tree with the named processes, the glare toned down and the panel open, and `landscape.html` as the terrain
+as the tree with the named processes and the glare toned down, and `landscape.html` as the terrain
 across all the model's years, playing the construction (with its `&play`, `&read`, `&live`, and `&still` as the free
 camera).
 

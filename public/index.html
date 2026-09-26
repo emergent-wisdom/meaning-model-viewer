@@ -98,6 +98,7 @@
   .toggle .keys { display: flex; height: 6px; width: 34px; border-radius: 3px; overflow: hidden; flex: none; opacity: 0.9; } .toggle .keys i { display: block; height: 100%; flex: 1; }
   .lens-key { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 0 0 5px 28px; font-size: 11.5px; color: var(--ink-2); line-height: 1.3; }
   .lens-key[hidden] { display: none; } .lens-key span { display: inline-flex; align-items: center; gap: 5px; } .lens-key i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .panel-legend { display: flex; flex-direction: column; gap: 7px; color: var(--ink-2); font-size: 12.5px; } .panel-legend .key-head { color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin: 0; }
   .keys-help { color: var(--muted); font-size: 11.5px; line-height: 1.5; } .keys-help b { color: var(--ink-2); font-weight: 600; }
   /* Labels of what the panel adds, placed so they never pile up. */
   #labels2 { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
@@ -137,6 +138,7 @@
   <section id="depth-section"><h2>Depth of the tree</h2><div class="seg" id="depths"></div><div class="note" id="depth-note"></div></section>
   <section id="show-section"><h2>Show <button id="all">All</button></h2><div id="kinds"></div></section>
   <section id="lenses-section"><h2>Lenses <button id="lenses-all">All</button></h2><div id="lenses"></div></section>
+  <section class="panel-legend" id="panel-legend"></section>
   <section class="keys-help">Keys: <b>D</b> this panel · <b>1</b>–<b>4</b> the scales · <b>T</b> processes · <b>L</b> tree · <b>R</b> terrain · <b>Space</b> play · <b>C</b> the camera · <b>G</b> the glare. Locked: scroll or pinch zooms in time, drag pans, <b>Shift</b>+scroll moves a tall view up and down. Otherwise drag turns, right-drag moves, scroll comes closer, <b>Shift</b>+scroll zooms in time.</section>
 </aside>
 <div class="tip" id="tip" hidden></div>

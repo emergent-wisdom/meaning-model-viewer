@@ -483,7 +483,9 @@ function placeNotes() {
   for (let pass = 0; pass < 4; pass += 1) for (const node of graphNodes) { if (enters.has(node.id)) continue; const near = (neighbours.get(node.id) ?? []).map((id) => enters.get(id)).filter((t) => t !== undefined); if (near.length) enters.set(node.id, Math.min(...near)); }
   const rest = graphNodes.filter((node) => !place.has(node.id)).sort((a, b) => String(a.born?.at ?? '').localeCompare(String(b.born?.at ?? '')));
   rest.forEach((node, i) => place.set(node.id, back(node, -LENGTH / 2 + ((i + 0.5) / rest.length) * LENGTH)));
-  for (const light of notes) { light.position.copy(place.get(light.userData.id)); light.userData.t = enters.get(light.userData.id) ?? -Infinity; light.userData.moments = (moments.get(light.userData.id) ?? []).filter(within); }
+  // A thought arrives with the first moment it is about; one about no moment arrives when the play reaches where it stands,
+  // so no thought comes before the history it sits over.
+  for (const light of notes) { light.position.copy(place.get(light.userData.id)); light.userData.t = enters.get(light.userData.id) ?? timeAtX(light.position.x); light.userData.moments = (moments.get(light.userData.id) ?? []).filter(within); }
 }
 // The layer of thoughts sits above and behind whatever the view holds.
 function mindTop() {
@@ -499,7 +501,7 @@ function drawNotes() {
   const shown = new Set();
   for (const light of notes) {
     if (!light.visible) continue; shown.add(light.userData.id); const on = lit === light;
-    for (const event of light.userData.moments) for (const point of meet(event)) mindLines.add(light.position.x, light.position.y, light.position.z, point.x, point.y, point.z, light.userData.color, on ? 0.95 : 0.13);
+    for (const event of light.userData.moments) if (shownByPlay(event.start, bornAt(event))) for (const point of meet(event)) mindLines.add(light.position.x, light.position.y, light.position.z, point.x, point.y, point.z, light.userData.color, on ? 0.95 : 0.13);
   }
   const edge = color('#c9d4ff');
   for (const [a, b] of noteEdges) if (shown.has(a) && shown.has(b)) { const p = noteById.get(a).position; const q = noteById.get(b).position; noteLinks.add(p.x, p.y, p.z, q.x, q.y, q.z, edge, 0.16); }
@@ -802,6 +804,7 @@ function layTerrain() {
   const positions = terrain.threads.geometry.attributes.position; let n = 0;
   for (const point of terrain.mind) {
     const { at, z, y, order, jitter } = point.userData; const x = at ? X(Math.max(F.a, Math.min(F.b, at.event.start))) : order * LENGTH * 0.9; point.position.set(x + jitter, y, z);
+    point.userData.t = at ? at.event.start : timeAtX(x); // a note about no moment arrives when the play reaches where it stands
     if (at && inView(at.event.start, 0.3)) { positions.array.set([point.position.x, point.position.y, point.position.z, X(Math.max(F.a, Math.min(F.b, at.event.start))), 0.3, z], n * 6); n += 1; }
   }
   terrain.threadCount = n; positions.needsUpdate = true; heightsTerrain();
@@ -1178,18 +1181,20 @@ const FIELD_LEGEND = '<div class="key-head">How to read it</div>'
   + `<div class="key-row" style="gap:12px;flex-wrap:wrap">${groups.map((g) => `<span style="display:inline-flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:50%;background:${g.hue};display:inline-block"></i>${g.label}</span>`).join('')}</div>`;
 
 // ---- the story, as the tool renders it from the graph ------------------------------------------------------------------------
-document.getElementById('legend').innerHTML = FIELD_LEGEND;
+// The legend stands on the right when the panel is folded away, and inside the panel when it is open.
+const setLegend = (html) => { document.getElementById('legend').innerHTML = html; document.getElementById('panel-legend').innerHTML = html; };
+setLegend(FIELD_LEGEND);
 // The terrain's own words: what its ridges, beams, diamonds and lights are, and how many functions rise.
 function hud() {
-  if (!terrain.on) { document.getElementById('sub').textContent = FIELD_SUB; document.getElementById('legend').innerHTML = FIELD_LEGEND; showStats(); return; }
+  if (!terrain.on) { document.getElementById('sub').textContent = FIELD_SUB; setLegend(FIELD_LEGEND); showStats(); return; }
   document.getElementById('sub').textContent = `${terrain.persons.map((person) => person.name).join(', ')}. ${terrain.rows.length} functions over time, each the model's own record, rising in the order the agent built them.`;
   const svg = (inner) => `<svg width="30" height="16">${inner}</svg>`;
-  document.getElementById('legend').innerHTML = '<div class="key-head">How to read it</div>'
+  setLegend('<div class="key-head">How to read it</div>'
     + keyRow(svg('<path d="M1 14 C 7 14, 9 3, 14 5 S 22 12, 29 2" fill="none" stroke="#c3c2b7" stroke-width="2"/>'), 'A ridge is one function of the model over time')
     + keyRow(svg('<rect x="14" y="1" width="2" height="14" fill="#c3c2b7"/>'), 'A beam is an Event: something that happens')
     + keyRow(svg('<path d="M15 1 L21 8 L15 15 L9 8 Z" fill="#c3c2b7"/>'), 'A diamond is a decision; it glows once the model has drawn it')
     + keyRow(svg('<circle cx="15" cy="8" r="5" fill="#c9d4ff" opacity="0.9"/>'), "Lights above are the agent's understanding and the prose, threaded to their moments")
-    + `<div class="key-row" style="gap:12px;flex-wrap:wrap">${[...terrain.persons.map((person, i) => [person.name, HUES[i % HUES.length]]), ['the world', WORLD]].map(([name, hue]) => `<span style="display:inline-flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:50%;background:${hue};display:inline-block"></i>${name}</span>`).join('')}</div>`;
+    + `<div class="key-row" style="gap:12px;flex-wrap:wrap">${[...terrain.persons.map((person, i) => [person.name, HUES[i % HUES.length]]), ['the world', WORLD]].map(([name, hue]) => `<span style="display:inline-flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:50%;background:${hue};display:inline-block"></i>${name}</span>`).join('')}</div>`);
   showStats();
 }
 const inline = (text) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
@@ -1253,7 +1258,7 @@ fetch('data/index.json', { cache: 'no-store' }).then((response) => response.json
     const when = run.lastCall ? new Date(run.lastCall).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) : null;
     const meta = document.createElement('span'); meta.textContent = [`${run.events} Events`, when ? `last worked on ${when} UTC` : null].filter(Boolean).join(' · '); button.append(meta);
     button.addEventListener('click', () => {
-      if (run.name === dataName) return; const next = new URLSearchParams(location.search); next.set('data', run.name); next.set('panel', '');
+      if (run.name === dataName) return; const next = new URLSearchParams(location.search); next.set('data', run.name); next.delete('panel');
       for (const key of ['at', 'pose', 'focus', 'lenses']) next.delete(key);
       location.search = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/=(&|$)/g, '$1');
     });
@@ -1337,7 +1342,7 @@ function syncURL() {
     if (show === without) next.set('nothoughts', ''); else if (show !== [...DEFAULT_SHOW].sort().join(',')) next.set('show', show);
     if (opt.lenses.size) next.set('lenses', opt.lenses.size === lensList.length ? 'all' : [...opt.lenses].join(','));
     if (!atEnd && !playing) next.set('at', opt.mode === 'construction' ? new Date(tau).toISOString() : now.toFixed(4)); else if (!atEnd && opt.mode === 'construction') next.set('at', new Date(tau).toISOString());
-    if (!panel.hidden) next.set('panel', ''); if (!document.getElementById('reader').hidden) next.set('read', ''); if (!qrPanel.hidden) next.set('qr', '');
+    if (panel.hidden && !params.has('capture')) next.set('panel', 'off'); if (!document.getElementById('reader').hidden) next.set('read', ''); if (!qrPanel.hidden) next.set('qr', '');
     const query = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/\+/g, '%20').replace(/=(&|$)/g, '$1');
     history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}`);
   }, 400);
@@ -1473,7 +1478,8 @@ if (params.has('t0') && params.has('t1')) { currentPreset = null; setView(Math.m
 else if (params.has('focus') && treeById.has(params.get('focus'))) { const { reach } = treeById.get(params.get('focus')); currentPreset = null; setView(...windowAt((reach[0] + reach[1]) / 2, 0.5, Math.max(0.02, (reach[1] - reach[0]) * 1.6))); }
 else if (currentPreset && currentPreset !== 'story') preset(currentPreset, false);
 if (params.has('at')) { const at = params.get('at'); if (opt.mode === 'construction') { const t = Date.parse(at); if (Number.isFinite(t)) { tau = Math.max(C0, Math.min(C1, t)); atEnd = tau >= C1; } } else if (Number.isFinite(Number(at))) { now = Number(at); atEnd = false; } }
-if (params.has('panel')) openPanel(true);
+// The panel with every choice is open beside the view, unless the URL folds it away or a recorder is drawing frames.
+openPanel(params.get('panel') !== 'off' && !params.has('capture'));
 if (opt.layout === 'terrain') { showTerrain(true); if (opt.camera !== 'locked') { camera.position.copy(terrain.home.position); controls.target.copy(terrain.home.target); } }
 setCamera(opt.camera, true);
 // A kept pose was the camera's in the field as the URL has it.

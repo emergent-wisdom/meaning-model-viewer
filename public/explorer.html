@@ -9,7 +9,7 @@
 const from = new URLSearchParams(location.search); const to = new URLSearchParams();
 for (const key of ['data', 'title', 'live', 'zoom', 'life', 't0', 't1', 'focus', 'depth', 'lenses']) if (from.has(key)) to.set(key, from.get(key));
 to.set('camera', 'locked'); to.set('glare', 'soft'); if (from.get('view') !== 'together') to.set('view', 'layers');
-to.set('show', from.get('show') ?? 'processes'); if (!from.has('fold')) to.set('panel', '');
+to.set('show', from.get('show') ?? 'processes'); if (from.has('fold')) to.set('panel', 'off');
 location.replace(`./?${to.toString().replace(/%2C/g, ',').replace(/=(&|$)/g, '$1')}`);
 </script>
 </head>
