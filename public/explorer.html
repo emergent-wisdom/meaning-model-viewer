@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Story Explorer</title>
+<title>Explorer</title>
 <style>
   :root { --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781; --panel: rgba(18, 18, 17, 0.78); --ring: rgba(255, 255, 255, 0.10); --accent: #3987e5; }
   * { box-sizing: border-box; }
@@ -61,6 +61,7 @@
   .lbl.hide { opacity: 0; }
   .lbl.event { color: #f2f1ec; font-size: 12px; font-weight: 500; }
   .lbl.event.big { font-size: 13.5px; font-weight: 600; color: #fff; }
+  .lbl.event.inner { font-style: italic; color: #e7e3ff; }
   .lbl.process { font-size: 12.5px; font-weight: 500; }
   .lbl.sub { font-size: 11.5px; color: var(--ink-2); }
   .lbl.tick { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -103,8 +104,8 @@
 <div id="scene"></div>
 <div class="fade top"></div><div class="fade bottom"></div>
 <div id="labels"></div>
-<div class="hud title"><div class="eyebrow">A world model an agent built with the Meaning Model</div><h1 id="title">Story Explorer</h1><div class="sub" id="sub"></div>
-  <div class="repos"><span>The story and this view</span><a href="https://github.com/emergent-wisdom/story">github.com/emergent-wisdom/story</a><span>The tool</span><a href="https://github.com/emergent-wisdom/meaning-model">github.com/emergent-wisdom/meaning-model</a></div></div>
+<div class="hud title"><div class="eyebrow">A world model an agent built with the Meaning Model</div><h1 id="title">Explorer</h1><div class="sub" id="sub"></div>
+  <div class="repos" id="repos"></div></div>
 <aside class="hud panel" id="panel" aria-label="What the view shows">
   <section><h2>Representation <button id="fold" aria-label="Fold the panel">Fold</button></h2><div class="seg" id="modes"><button data-mode="layers">Layers</button><button data-mode="together">Together</button></div><div class="whose" id="whose"></div></section>
   <section><h2>Depth of the tree</h2><div class="seg" id="depths"></div><div class="depth-note" id="depth-note"></div></section>

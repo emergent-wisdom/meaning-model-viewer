@@ -9,9 +9,11 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { loadData, fillLinks, processLabel, holderText } from './common.js';
 
 const params = new URLSearchParams(location.search);
-const data = await (await fetch(`data/${params.get('data') ?? 'rabbit-hole'}.json?ts=${Date.now()}`, { cache: 'no-store' })).json();
+const { name: dataName, data } = await loadData(params);
+fillLinks(document.getElementById('repos'), data);
 const HUES = ['#3987e5', '#d95926', '#199e70']; const WORLD = '#9085e9'; const THINGS = '#c9a45c';
 const KIND = { causes: '#ff8a4c', enables: '#3fd3c0', realizes_forecast: '#b793ff', constrains: '#ff4d6d', other: '#9a9a9a' };
 const NOTE = { thought: ['Thought', '#c9d4ff'], author: ['Author record', '#ffd49a'], draw: ['Draw', '#ffffff'], world: ['World stage', '#b9aefc'], reference: ['Model reference', '#8fe3c9'], director: ['Director', '#ffb3c7'], review: ['Review', '#ffe08a'] };
@@ -30,7 +32,10 @@ const smooth = (x) => { const c = Math.max(0, Math.min(1, x)); return c * c * (3
 const COLORS = new Map(); const color = (hex) => { let c = COLORS.get(hex); if (!c) { c = new THREE.Color(hex); COLORS.set(hex, c); } return c; }; // shared: clone before changing one
 
 // ---- the model: the Event tree, whose each Event is, and the processes in it ---------------------------------------------
-const events = data.events.filter((event) => Array.isArray(event.reach));
+// The tree is the world's and each person's inner process; readings (and any holder's understanding) are shown as readings
+// of their records, never as parts of the world.
+const WORLDLY = new Set(['accepted_world', 'inner', 'unrooted', undefined]);
+const events = data.events.filter((event) => Array.isArray(event.reach) && event.role !== 'reading' && WORLDLY.has(event.context));
 if (!events.length || !data.processes) {
   document.getElementById('sub').textContent = 'This data file has no Event tree yet: make it again with node extract.mjs.';
   throw new Error('no tree in the data file');
@@ -46,15 +51,7 @@ const GROUPS = [...principals.map((person) => ({ key: person.id, name: person.na
   { key: 'things', name: 'Places and institutions', hue: THINGS }, { key: 'world', name: 'The world', hue: WORLD }];
 const groupIndex = new Map(GROUPS.map((group, i) => [group.key, i]));
 const hueOf = (owner) => GROUPS[groupIndex.get(groupOf(owner))].hue;
-const NAMES = {
-  'kieran.sharehouse_belonging': 'belonging to the Sharehouse', 'kieran.fear_left_behind': 'fear of being left behind', 'kieran.honesty_with_laura': 'honesty with Laura',
-  'kieran.screen_hours': 'screen hours a day', 'kieran.sleep_hours': 'sleep a night', 'kieran.stake_gbp': 'his stake in crypto', 'kieran.known_faces': 'faces he knows',
-  'laura.exhaustion': 'exhaustion', 'laura.spoken_share': 'how much of her hurt she says', 'laura.trust_in_kieran_money': 'trust in Kieran with money',
-  'barbara.care_for_kieran': 'care for Kieran', 'barbara.guilt': 'guilt', 'barbara.purism': 'purism', 'card.wallet_btc': 'the wallet behind the card', 'clearing.cycle_days': 'the clearing cycle',
-  'btc.price_gbp': 'bitcoin price', 'stablecoin.price_usd': 'the stablecoin', 'sharehouse.messages_per_day': 'Sharehouse messages a day', 'sharehouse.members': 'Sharehouse members',
-  'household.deposit_gbp': 'the house deposit', 'house_price.wroughton_gbp': 'house prices in Wroughton', 'hart.crypto_block': "the Hart's block on crypto", 'icu.occupancy_share': 'intensive care, share of capacity',
-};
-const processName = (process) => NAMES[process.id] ?? process.id.split('.').slice(1).join(' ').replace(/_/g, ' ');
+const processName = (process) => processLabel(data, process.id);
 // An Event's name: its boundary without the date it opens with, or the name of whose life or process it is.
 const DATEY = /\b(1\d{3}|20\d{2}|\d{3,6} (years|BC)|January|February|March|April|May|June|July|August|September|October|November|December|spring|summer|autumn|winter|night|evening|morning|week|Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|onward|Late|Early|Mid)\b/i;
 function eventName(event) {
@@ -416,10 +413,11 @@ function draw() {
     }
     const event = node.event; const sub = node.kind === 'sub';
     const top = p.y + (sub ? BAR * 1.6 : BAR); const tint = hue.clone().lerp(WHITE, sub ? 0.15 : 0.3);
-    const alpha = (sub ? 0.05 : node.depth <= 1 ? 0.1 : 0.2) * (chain ? 2.5 : 1) * vis;
+    const alpha = (sub ? 0.05 : node.depth <= 1 ? 0.1 : 0.2) * (chain ? 2.5 : 1) * vis; const own = event.context === 'inner';
     if (wide > 0.12) {
-      walls.quad(a, b, p.y, top, p.y, top, p.z, tint, sub ? alpha : 0.0, alpha * (sub ? 1 : 1.2));
-      crests.add(a, top, p.z, b, top, p.z, tint, (chain ? 1 : sub ? 0.4 : node.depth <= 1 ? 0.5 : 0.75) * vis);
+      const crestAlpha = (chain ? 1 : sub ? 0.4 : node.depth <= 1 ? 0.5 : 0.75) * vis;
+      if (own) { for (let x = a; x < b; x += 0.9) crests.add(x, top, p.z, Math.min(b, x + 0.5), top, p.z, tint, crestAlpha); }
+      else { walls.quad(a, b, p.y, top, p.y, top, p.z, tint, sub ? alpha : 0.0, alpha * (sub ? 1 : 1.2)); crests.add(a, top, p.z, b, top, p.z, tint, crestAlpha); }
       if (sub) crests.add(a, p.y, p.z, b, p.y, p.z, tint, 0.2 * vis);
       if (x0 >= left) crests.add(a, p.y, p.z, a, top, p.z, tint, 0.8 * vis);
       if (live) hoverTargets.push({ kind: sub ? 'sub' : 'event', node, wseg: [W(a, top, p.z), W(b, top, p.z)] });
@@ -590,7 +588,7 @@ const labels = (() => {
       const big = node.depth <= 1 || wide > LENGTH * 0.25;
       const pri = 400 + Math.min(200, wide * 3) - node.depth * 20 + (node.event.cuts ?? 0) * 4 + (litChain.has(node.id) ? 400 : 0);
       const x = wide > 1.2 ? x0 + 0.25 : (x0 + x1) / 2;
-      wanted.push({ key: `ev:${node.id}`, cls: `event${big ? ' big' : ''}${node.kind === 'sub' ? ' sub' : ''}`, html: esc(words(node.event.name, big ? 52 : 40)), p: [x, top + 0.12, p.z], ax: wide > 1.2 ? 0 : 0.5, ay: 1, pri });
+      wanted.push({ key: `ev:${node.id}`, cls: `event${big ? ' big' : ''}${node.kind === 'sub' ? ' sub' : ''}${node.event.context === 'inner' ? ' inner' : ''}`, html: esc(words(node.event.name, big ? 52 : 40)), p: [x, top + 0.12, p.z], ax: wide > 1.2 ? 0 : 0.5, ay: 1, pri });
     }
     for (const thread of threadTops) if (thread.weight >= 2) wanted.push({ key: `thr:${thread.event.id}`, cls: 'event', html: esc(words(thread.event.name, 40)), p: [thread.x, thread.top.y + 0.5, thread.top.z], ax: 0.5, ay: 1, pri: 300 + thread.weight * 25 + (litChain.has(thread.event.id) ? 400 : 0) });
     if (state.show.has('prose')) {
@@ -736,7 +734,9 @@ function showTip(target) {
     const event = target.event ?? target.node.event; const holder = event.parent ? byId.get(event.parent) : null; const who = people.get(event.owner)?.person.name ?? referents.get(event.owner)?.short ?? 'The world';
     const scaffold = scaffoldOf.get(event.id);
     const roles = { world: 'The world', development: 'A long development', life: 'A life', inner: 'An inner life', period: 'A period of a life', arc: 'A change arc', phase: 'A phase of a change arc', slow: 'A slow process of a life', part: 'A part', moment: 'A moment' };
-    tip.append(line('k', `${roles[event.role] ?? 'An Event'} · level ${event.depth} · ${who}`), line('v', clip(event.label, 200)));
+    const own = event.context === 'inner';
+    tip.append(line('k', own ? `${who}'s own · ${event.role === 'inner' ? 'their inner process' : 'a record of their inner process'} · level ${event.depth}` : `${roles[event.role] ?? 'An Event'} · level ${event.depth} · ${who}`), line('v', clip(event.label, 200)));
+    if (own) tip.append(line('a', `Held in ${who.split(' ')[0]}'s inner process: their own view, not a fact of the world. Where it differs from the world, it is how they see it.`));
     tip.append(line('m', `${range(event.reach[0], event.reach[1])}${Number.isFinite(event.start) ? '' : event.children.length ? ' (no interval of its own: the span of what it holds)' : ' (no interval of its own: the span of what holds it)'}`));
     if (event.description) tip.append(line('m', clip(event.description, 360)));
     if (scaffold) { const above = processById.get(scaffold.parent); const home = above ? byId.get(above.home) : null;
@@ -764,11 +764,14 @@ function showTip(target) {
     if (event) tip.append(line('a', `At: ${clip(event.name, 90)}`));
   } else if (target.kind === 'lens') {
     const { lens, reading } = target; const event = byId.get(reading.eventId);
-    tip.append(line('k', `Lens · ${lens.name}${reading.earlier ? ' · asked of an earlier version' : ''}`), line('v', clip(event?.name ?? reading.eventId, 120)), line('m', reading.question ?? lens.question ?? ''));
+    tip.append(line('k', `A reading · ${lens.name}${reading.earlier ? ' · asked of an earlier version' : ''}`), line('v', `${holderText(reading, data.people).replace(/^\w/, (c) => c.toUpperCase())}, of: ${clip(event?.name ?? reading.eventId, 110)}`),
+      line('m', reading.question ?? lens.question ?? ''));
+    if (reading.unit) tip.append(line('a', `Unit: ${reading.unit}`));
     const split = document.createElement('div'); split.className = 'split';
     for (const answer of reading.answers.filter((item) => item.weight > 0).sort((a, b) => (a.key === 'remainder') - (b.key === 'remainder'))) { const i = document.createElement('i'); i.style.width = `${answer.weight * 100}%`; i.style.background = lens.colorOf(answer.key); split.append(i); }
     tip.append(split, weights(reading.answers, (key) => lens.colorOf(key)));
-    tip.append(line('a', `${timeText(reading.t, 1)}${reading.confidence ? ` · confidence ${reading.confidence.toFixed(2)}` : ''}${reading.estimated ? ' · estimated' : ''}`));
+    tip.append(line('a', `At the record's time, ${timeText(reading.t, 1)}${reading.confidence ? ` · confidence ${reading.confidence.toFixed(2)}` : ''}${reading.estimated ? ' · estimated' : ' · authored'} · evidence cutoff not recorded`));
+    if (!reading.placed && !reading.older) tip.append(line('a', 'It sits on the record it reads, as models before placement kept readings.'));
   } else if (target.kind === 'note') {
     const { note } = target; tip.append(line('k', target.noteKind));
     if (note.node.title) tip.append(line('v', note.node.title)); tip.append(line('m', clip(note.node.text, 600)));
@@ -837,7 +840,7 @@ function changed(layout = true) { if (layout) relayout = true; dirty = true; syn
 buildPanel();
 
 // ---- the story, as the tool renders it from the graph --------------------------------------------------------------------------------------
-const titleText = params.get('title') ?? data.title ?? 'Story Explorer';
+const titleText = params.get('title') ?? data.title ?? 'Explorer';
 document.getElementById('title').textContent = titleText;
 document.getElementById('sub').textContent = `${events.length} Events in a tree ${MAX_DEPTH + 1} levels deep, from ${timeText(EARLIEST, 1e6)} to ${Math.round(PRESENT)}, with ${named.length} named processes, `
   + `${nodes.filter((node) => node.kind === 'sub').length} subsidiary ones and ${lenses.length} ${lenses.length === 1 ? 'lens' : 'lenses'}. Zoom from a moment to world history; add detail on the right.`;
@@ -891,7 +894,7 @@ function syncURL() {
   }, 400);
 }
 if (params.has('live')) setInterval(async () => {
-  try { const next = await (await fetch(`data/${params.get('data') ?? 'rabbit-hole'}.json?ts=${Date.now()}`, { cache: 'no-store' })).json(); if (next.lastCall !== data.lastCall || next.generatedAt !== data.generatedAt) location.reload(); } catch { /* keep the last view */ }
+  try { const next = await (await fetch(`data/${encodeURIComponent(dataName)}.json?ts=${Date.now()}`, { cache: 'no-store' })).json(); if (next.lastCall !== data.lastCall || next.generatedAt !== data.generatedAt) location.reload(); } catch { /* keep the last view */ }
 }, 20000);
 let last = performance.now(); let lastHover = 0; const drawTimes = [];
 // For captures and tests: the window on screen, the time under a point, and what each redraw costs.

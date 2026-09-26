@@ -9,9 +9,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { loadData, fillLinks } from './common.js';
 
 const params = new URLSearchParams(location.search);
-const dataName = params.get('data') ?? 'rabbit-hole';
 const HUES = ['#3987e5', '#d95926', '#199e70'];
 const WORLD = '#9085e9';
 const NX = 420; const LENGTH = 96; const AMP = 8.5; const ROW = 2.1; const GAP = 4.2;
@@ -20,7 +20,11 @@ const clip = (text, n) => { const s = String(text ?? '').replace(/\s+/g, ' '); r
 const short = (text, n = 40) => { const head = String(text ?? '').replace(/\s+/g, ' ').split(/[:;,]| from | since | built /)[0].trim(); if (head.length <= n) return head; const cut = head.slice(0, n - 1); const space = cut.lastIndexOf(' '); return `${space > n * 0.6 ? cut.slice(0, space) : cut}…`; };
 const tip = document.getElementById('tip');
 
-let data = await (await fetch(`data/${dataName}.json?ts=${Date.now()}`, { cache: 'no-store' })).json();
+let { name: dataName, data } = await loadData(params);
+fillLinks(document.getElementById('repos'), data);
+// Readings and a holder's understanding are not functions of the world: the landscape draws the world and the lives.
+const worldOnly = (next) => ({ ...next, events: next.events.filter((event) => event.role !== 'reading' && !['understanding'].includes(event.context)) });
+data = worldOnly(data);
 
 // ---- rows: every function over time --------------------------------------------------------------------------------------
 function buildRows() {
@@ -323,7 +327,7 @@ function setCaption(raw) {
   element.append(clip(body, 420));
 }
 function hud() {
-  { const full = params.get('title') ?? data.title ?? 'Story Landscape'; const m = full.match(/^(.*?)\s*(\([^)]*\))$/); const t = document.getElementById('title');
+  { const full = params.get('title') ?? data.title ?? 'Landscape'; const m = full.match(/^(.*?)\s*(\([^)]*\))$/); const t = document.getElementById('title');
     t.textContent = m ? m[1] : full; if (m) { const aside = document.createElement('span'); aside.className = 'aside'; aside.textContent = ` ${m[2]}`; t.append(aside); } }
   document.getElementById('sub').textContent = `${model.principals.map((person) => person.name).join(', ')}. ${model.rows.length} functions over time, each the model's own record, rising in the order the agent built them.`;
   const bornOf = (item) => (item?.born?.at ? Date.parse(item.born.at) : -Infinity);
@@ -471,6 +475,6 @@ if (params.has('read')) document.getElementById('read').click();
 if (params.has('live')) setInterval(async () => {
   if (playing) return;
   try { const next = await (await fetch(`data/${dataName}.json?ts=${Date.now()}`, { cache: 'no-store' })).json(); if (next.lastCall === data.lastCall) return;
-    data = next; model = buildRows(); const times = data.steps.map((step) => Date.parse(step.at)).filter(Number.isFinite).sort((a, b) => a - b); T0 = times[0] ?? 0; T1 = times.at(-1) ?? 1; active = activeClock(times);
+    data = worldOnly(next); model = buildRows(); const times = data.steps.map((step) => Date.parse(step.at)).filter(Number.isFinite).sort((a, b) => a - b); T0 = times[0] ?? 0; T1 = times.at(-1) ?? 1; active = activeClock(times);
     build(); for (const row of model.rows) if (!rowScale.has(row.id)) rowScale.set(row.id, 0); applyTau(); } catch { /* keep the last frame */ }
 }, 15000);

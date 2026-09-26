@@ -8,33 +8,30 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { loadData, fillLinks, linksOf, processLabel, holderText } from './common.js';
 
 const params = new URLSearchParams(location.search);
-const data = await (await fetch(`data/${params.get('data') ?? 'rabbit-hole'}.json?ts=${Date.now()}`, { cache: 'no-store' })).json();
+const { data } = await loadData(params);
 const HUES = ['#3987e5', '#d95926', '#199e70']; const WORLD = '#9085e9';
 const KIND = { causes: '#ff8a4c', enables: '#3fd3c0', realizes_forecast: '#b793ff', constrains: '#ff4d6d' };
 const LENGTH = 116; const AMP = 5.6; const ROW = 2.7; const GAP = 4.4; const NX = 400;
 const clip = (text, n) => { const s = String(text ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 
 // ---- the rows: every measure with a path, grouped by whose it is -------------------------------------------------------
-const NAMES = {
-  'kieran.sharehouse_belonging': 'belonging to the Sharehouse', 'kieran.fear_left_behind': 'fear of being left behind', 'kieran.honesty_with_laura': 'honesty with Laura',
-  'kieran.screen_hours': 'screen hours a day', 'kieran.sleep_hours': 'sleep a night', 'kieran.stake_gbp': 'his stake in crypto',
-  'laura.exhaustion': 'exhaustion', 'laura.spoken_share': 'how much of her hurt she says', 'laura.trust_in_kieran_money': 'trust in Kieran with money',
-  'barbara.care_for_kieran': 'care for Kieran', 'barbara.guilt': 'guilt', 'barbara.purism': 'purism',
-  'btc.price_gbp': 'bitcoin price', 'stablecoin.price_usd': 'the stablecoin', 'sharehouse.messages_per_day': 'Sharehouse messages a day', 'sharehouse.members': 'Sharehouse members',
-  'household.deposit_gbp': 'the house deposit', 'house_price.wroughton_gbp': 'house prices in Wroughton', 'hart.crypto_block': "the Hart's block on crypto", 'icu.occupancy_share': 'intensive care, share of capacity',
-};
+// A process's name is the run's own (display.names in its viewer.json), else its id as words; display.order sets the rows.
+const NAMES = new Proxy({}, { get: (_, id) => processLabel(data, id) });
 const principals = data.people.filter((person) => person.principal).sort((a, b) => a.order - b.order);
 const first = (person) => person.name.split(' ')[0].toLowerCase();
 const ownerOf = (measure) => principals.find((person) => measure.id.split('.')[0] === first(person) || measure.frame === `person:${first(person)}`) ?? null;
-const order = Object.keys(NAMES);
+const order = data.display?.order ?? Object.keys(data.display?.names ?? {});
 const measures = data.measures.filter((measure) => measure.points.length >= 2)
   .sort((a, b) => ((order.indexOf(a.id) + 1) || 99) - ((order.indexOf(b.id) + 1) || 99));
 const groups = [...principals.map((person, i) => ({ id: person.id, label: person.name, hue: HUES[i % HUES.length], rows: measures.filter((m) => ownerOf(m) === person) })),
   { id: 'world', label: 'The world', hue: WORLD, rows: measures.filter((m) => !ownerOf(m)) }].filter((group) => group.rows.length);
 const times = measures.flatMap((m) => m.points.map((p) => p.t));
-const T0 = Math.max(Math.min(...times), 2019.4); const T1 = Math.max(...times) + 0.12;
+// From a little before the story's own years (the window its prose and moments span) to its last value.
+const storyStart = (data.storyWindow ?? data.window)?.start;
+const T0 = Math.max(Math.min(...times), Number.isFinite(storyStart) ? storyStart - 0.4 : -Infinity); const T1 = Math.max(...times) + 0.12;
 const xOf = (t) => ((Math.max(T0, Math.min(T1, t)) - T0) / (T1 - T0) - 0.5) * LENGTH;
 const tOf = (i) => T0 + (i / (NX - 1)) * (T1 - T0);
 const rows = []; let z = 0;
@@ -155,7 +152,10 @@ principals.forEach((person) => {
     const element = document.createElement('div'); element.className = 'label lens-host';
     element.innerHTML = `<div class="lens"><div class="act"></div><div class="split"><i class="love" style="width:${love * 100}%"></i><i class="fear" style="width:${fear * 100}%"></i><i class="rest" style="width:${rest * 100}%"></i></div><div class="words"><span><b>love</b> ${Math.round(love * 100)}%</span><span><b>fear</b> ${Math.round(fear * 100)}%</span></div></div>`;
     element.querySelector('.act').textContent = `${person.name.split(' ')[0]}: ${act}`;
-    element.title = point.answers.map((answer) => `${answer.key.replace(/_/g, ' ')}: ${Math.round(answer.weight * 100)}%`).join('\n');
+    // A weight is never shown alone: the question, the unit, every answer with the remainder, the moment and whose it is.
+    const at = data.events.find((event) => event.id === point.eventId);
+    element.title = [series.question, series.unit, ...point.answers.map((answer) => `${answer.key.replace(/_/g, ' ')}: ${Math.round(answer.weight * 100)}%`),
+      at ? `At: ${at.label}` : null, `Whose: ${holderText({ holder: null })}`].filter(Boolean).join('\n');
     const top = Math.max(...own.map((row) => row.height(point.t)));
     const object = new CSS2DObject(element); object.position.set(xOf(point.t), top + 4.2, front.z + 0.8); object.center.set(0.5, 1); object.userData = { t: point.t, cutId: point.cutId, act, names: [person.name.split(' ')[0]] }; scene.add(object); lenses.push(object);
   }
@@ -233,7 +233,8 @@ const sweep = new THREE.Mesh(new THREE.PlaneGeometry(zFront - zBack + 12, AMP + 
 sweep.rotation.y = Math.PI / 2; sweep.position.set(0, (AMP + 6) / 2 - 0.5, (zFront + zBack) / 2 + 2); scene.add(sweep);
 
 // ---- HUD ------------------------------------------------------------------------------------------------------------------
-const titleText = params.get('title') ?? data.title ?? 'Story Processes';
+const titleText = params.get('title') ?? data.title ?? 'Processes';
+fillLinks(document.getElementById('repos'), data);
 document.getElementById('title').textContent = titleText;
 document.getElementById('sub').textContent = `${measures.length} processes the agent modeled for the story, each on its own scale, `
   + `and the ${threads.length} events that move them. The heights follow each process's authored path in the model.`;
@@ -272,6 +273,14 @@ const showThoughts = (on) => { mind.visible = on; thoughtsButton.classList.toggl
 thoughtsButton.addEventListener('click', () => showThoughts(!mind.visible)); showThoughts(mind.visible);
 
 const qrPanel = document.getElementById('qr-panel');
+// A QR code for each link the view names, the tool's largest; the server draws them.
+for (const [i, link] of [...linksOf(data)].sort((a, b) => (b.label === 'The tool') - (a.label === 'The tool')).entries()) {
+  const figure = document.createElement('figure'); if (i === 0) figure.className = 'big';
+  const image = document.createElement('img'); image.className = 'code'; image.alt = `QR code for ${link.url}`; image.src = `qr.svg?url=${encodeURIComponent(link.url)}`;
+  image.addEventListener('error', () => { figure.remove(); if (!qrPanel.querySelector('figure')) document.getElementById('qr').hidden = true; });
+  const caption = document.createElement('figcaption'); const name = document.createElement('b'); name.textContent = link.label; caption.append(name, link.url.replace(/^https?:\/\//, ''));
+  figure.append(image, caption); qrPanel.append(figure);
+}
 document.getElementById('qr').addEventListener('click', () => { qrPanel.hidden = !qrPanel.hidden; });
 qrPanel.addEventListener('click', () => { qrPanel.hidden = true; });
 addEventListener('keydown', (event) => { if (event.key === 'Escape') qrPanel.hidden = true; });
