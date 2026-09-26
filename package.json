@@ -1,7 +1,7 @@
 {
   "name": "meaning-model-viewer",
-  "version": "0.2.0",
-  "description": "Open a Meaning Model run in three views: the explorer, which zooms from a day to deep time, the processes over the story's years, and the landscape with the construction replayed.",
+  "version": "0.3.0",
+  "description": "Open a Meaning Model run in one view: its processes over the story's years, zoomable from a day to deep time, in layers or together, with the story or its construction played, and the landscape.",
   "keywords": ["meaning-model", "visualization", "world-model", "story", "three.js"],
   "type": "module",
   "bin": {

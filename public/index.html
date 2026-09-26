@@ -15,30 +15,33 @@
   .lede { color: var(--ink-2); font-size: 17px; line-height: 1.5; max-width: 760px; margin: 0 0 34px; }
   .run { background: var(--panel); border-radius: 14px; padding: 20px 22px; box-shadow: 0 0 0 1px var(--ring) inset; margin-bottom: 16px; }
   .run h2 { margin: 0 0 4px; font-size: 26px; font-weight: 600; } .run .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; font-variant-numeric: tabular-nums; }
-  .views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .views { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
   .views a { display: block; text-decoration: none; color: var(--ink); background: rgba(255,255,255,0.05); border-radius: 11px; padding: 14px 16px; box-shadow: 0 0 0 1px var(--ring) inset; transition: background 0.15s; }
   .views a:hover { background: rgba(255,255,255,0.11); }
   .views b { display: block; font-size: 16px; font-weight: 600; margin-bottom: 4px; } .views span { color: var(--ink-2); font-size: 13.5px; line-height: 1.4; }
   .empty { color: var(--ink-2); font-size: 15px; line-height: 1.6; } code { background: rgba(255,255,255,0.08); border-radius: 5px; padding: 2px 6px; font-size: 14px; }
   .links { margin-top: 30px; display: grid; grid-template-columns: auto auto; justify-content: start; gap: 5px 14px; font-size: 14px; }
   .links span { color: var(--muted); } .links a { color: #fff; text-decoration: none; font-weight: 500; } .links a:hover { text-decoration: underline; }
-  @media (max-width: 760px) { .views { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
+  @media (max-width: 980px) { .views { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .views { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
 </style>
 </head>
 <body>
 <main>
   <div class="eyebrow">Meaning Model Viewer</div>
   <h1 id="heading">The runs to open</h1>
-  <p class="lede">A Meaning Model run holds a world, the lives in it and how they change, built as events and processes over time. Open one in three views: the explorer, which zooms from a single day to the model's deep past; the processes, over the story's years; and the landscape, which replays how the model was built.</p>
+  <p class="lede">A Meaning Model run holds a world, the lives in it and how they change, built as events and processes over time. Open it in one view and choose in its Display panel how to show it: spinning, free or locked; with the full glare or toned down; the story's years or the model's construction played; from a single day to the model's deep past. The landscape shows the model as terrain.</p>
   <div id="runs"></div>
   <div class="links"><span>This viewer</span><a href="https://github.com/emergent-wisdom/meaning-model-viewer">github.com/emergent-wisdom/meaning-model-viewer</a><span>The tool</span><a href="https://github.com/emergent-wisdom/meaning-model">github.com/emergent-wisdom/meaning-model</a><span>A story made with it</span><a href="https://github.com/emergent-wisdom/story">github.com/emergent-wisdom/story</a></div>
 </main>
 <script type="module">
 const box = document.getElementById('runs');
+// The one view, from three starting points, and the landscape.
 const VIEWS = [
-  ['explorer', 'The explorer', 'The whole tree of Events and processes, zoomable from a day to deep time, in layers or together.'],
-  ['processes', 'The processes', 'Every named process over the story\'s years, with the Events that move them.'],
-  ['landscape', 'The landscape', 'Every function of the model as terrain, and the construction replayed.'],
+  ['processes', '', 'The view', 'Every process the agent modeled over the story\'s years, the Events that move them and the agent\'s thoughts, turning slowly.'],
+  ['processes', 'camera=locked&view=layers&show=processes&glare=soft&panel', 'The tree, in layers', 'The world and all it holds, level by level, held still and zoomable from a day to deep time.'],
+  ['processes', 'mode=construction&play', 'The construction', 'The model and the story graph as the agent built them, step by step.'],
+  ['landscape', '', 'The landscape', 'Every function of the model as terrain, and the construction replayed.'],
 ];
 let index = null; try { index = await (await fetch('data/index.json', { cache: 'no-store' })).json(); } catch { index = null; }
 const runs = index?.runs ?? [];
@@ -52,8 +55,8 @@ if (!runs.length) {
     const meta = document.createElement('div'); meta.className = 'meta';
     meta.textContent = [run.name, `${run.events} Events`, run.lastCall ? `last call ${run.lastCall.slice(0, 16).replace('T', ' ')} UTC` : null, run.live ? 'following the run' : null].filter(Boolean).join(' · ');
     const views = document.createElement('div'); views.className = 'views';
-    for (const [page, name, about] of VIEWS) {
-      const link = document.createElement('a'); link.href = `${page}.html?data=${encodeURIComponent(run.name)}${run.live ? '&live' : ''}`;
+    for (const [page, options, name, about] of VIEWS) {
+      const link = document.createElement('a'); link.href = `${page}.html?data=${encodeURIComponent(run.name)}${options ? `&${options}` : ''}${run.live ? '&live' : ''}`;
       const b = document.createElement('b'); b.textContent = name; const span = document.createElement('span'); span.textContent = about; link.append(b, span); views.append(link);
     }
     card.append(title, meta, views); box.append(card);

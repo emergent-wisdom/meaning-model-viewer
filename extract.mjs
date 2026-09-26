@@ -503,7 +503,7 @@ const storyWords = story ? story.units.reduce((sum, unit) => sum + unit.text.spl
 const data = {
   // The story's own title, from its document in the graph; else the chosen world's.
   schema: 'meaning-model-viewer/2', runFormat: flag('--run') ? RUN_FORMAT : null, meaningModel: meaningModelVersion, readingsPlaced: readingEvents.size > 0,
-  generatedAt: new Date().toISOString(), run: runName, title: flag('--title') ?? storyTitle ?? title ?? runName, display,
+  generatedAt: new Date().toISOString(), run: runName, title: flag('--title') ?? display?.title ?? storyTitle ?? title ?? runName, display,
   contexts: (mm.context_roots ?? []).map((root) => ({ eventId: root.event_id, kind: root.kind, holder: rootHolder(root.event_id), label: clip(index.events.get(root.event_id)?.boundary, 160) })),
   timeUnit: unit, firstCall, lastCall: calls.at(-1)?.at ?? null, headGraphHash: history.headGraphHash ?? null, modelHash: boundModel,
   window, extent, storyWindow, people, events, relations, draws, referents, processes, lenses,
