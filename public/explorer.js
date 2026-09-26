@@ -19,13 +19,15 @@ const ANSWER = ['#ffb057', '#58b4ff', '#5fd39a', '#c69bff', '#ff7aa8', '#e8e27a'
 const LENGTH = 120; const BAR = 0.3;
 // Spacing across the lanes; it grows when the tree shown is shallow, so the view fills the screen.
 let LANE = 0.8; let ROW = 2.2; let AMP = 3.4; let GROUP_GAP = 1.4; let spread = 1;
-const setSpread = (k) => { spread = k; LANE = 0.8 * k; ROW = 2.2 * k; AMP = 3.4 * Math.min(k, 1.6); GROUP_GAP = 1.4 * k; };
+const setSpread = (k) => { spread = k; LANE = 0.8 * k; ROW = 2.2 * k; AMP = ROW * 1.55; GROUP_GAP = 1.4 * k; };
+// A curtain's full height: a little over its row in Layers, twice its row in Together, as in the processes view.
+const ampAt = (m) => AMP * (1 + 0.3 * m);
 const clip = (text, n) => { const s = String(text ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 // A name cut at a word, for labels.
 const words = (text, n) => { const s = String(text ?? '').replace(/\s+/g, ' ').trim(); if (s.length <= n) return s; const cut = s.slice(0, n - 1); const space = cut.lastIndexOf(' '); return `${(space > n * 0.55 ? cut.slice(0, space) : cut).replace(/[,;:]$/, '')}…`; };
 const push = (map, key, value) => { if (!map.has(key)) map.set(key, []); map.get(key).push(value); };
 const smooth = (x) => { const c = Math.max(0, Math.min(1, x)); return c * c * (3 - 2 * c); };
-const color = (hex) => new THREE.Color(hex);
+const COLORS = new Map(); const color = (hex) => { let c = COLORS.get(hex); if (!c) { c = new THREE.Color(hex); COLORS.set(hex, c); } return c; }; // shared: clone before changing one
 
 // ---- the model: the Event tree, whose each Event is, and the processes in it ---------------------------------------------
 const events = data.events.filter((event) => Array.isArray(event.reach));
@@ -144,9 +146,10 @@ const timeAtX = (x) => { const u = x / LENGTH + 0.5; const k = ((u + 0.05) / 1.1
 const X = (t) => { const x = (fracOf(F, t) - 0.5) * LENGTH; return x < -3 * LENGTH ? -3 * LENGTH : x > 3 * LENGTH ? 3 * LENGTH : x; };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dateOf = (t) => { const year = Math.floor(t); const ms = Date.UTC(year, 0, 1) + (t - year) * 365.2425 * 86400000; return new Date(ms); };
-const yearText = (year) => (year < 0 ? `${(-year).toLocaleString('en-GB')} BCE` : year === 0 ? '1 CE' : `${year}`);
+const grouped = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const yearText = (year) => (year < 0 ? `${grouped(-year)} BCE` : year === 0 ? '1 CE' : `${year}`);
 function timeText(t, span = F.s) {
-  if (PRESENT - t >= 5000) { const ago = PRESENT - t; const round = ago >= 100000 ? 10000 : ago >= 20000 ? 1000 : 100; return `${(Math.round(ago / round) * round).toLocaleString('en-GB')} years ago`; }
+  if (PRESENT - t >= 5000) { const ago = PRESENT - t; const round = ago >= 100000 ? 10000 : ago >= 20000 ? 1000 : 100; return `${grouped(Math.round(ago / round) * round)} years ago`; }
   if (span > 30 || t < 1) return yearText(Math.round(t));
   const d = dateOf(t);
   if (span > 1.5) return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
@@ -154,7 +157,7 @@ function timeText(t, span = F.s) {
 }
 const spanText = (a, b) => {
   const years = b - a;
-  if (years >= 2) return `${Math.round(years).toLocaleString('en-GB')} years`;
+  if (years >= 2) return `${grouped(years)} years`;
   if (years >= 2 / 12) return `${Math.round(years * 12)} months`;
   return `${Math.max(1, Math.round(years * 365.2425))} days`;
 };
@@ -226,13 +229,17 @@ let dirty = true; let relayout = true;
 // ---- layout: lanes for each representation --------------------------------------------------------------------------------------
 // Layers: level k of the tree is floor k, below the one before; on each floor the groups keep their order front to back, the
 // named processes first, then the Events packed into lanes by time. Together: one field, each group's processes as rows
-// with its Events in lanes in front of them.
-const visible = (node) => {
+// with its Events in lanes in front of them. The tree's trunk (the world, its developments, lives and things) holds up the
+// Layers even without Events; Together, like the processes view, leaves it out until Events are asked for.
+const visible = (node, mode) => {
   if (node.depth > state.depth) return false;
   if (node.kind === 'process') return state.show.has('processes');
   if (node.kind === 'sub') return state.show.has('subsidiary');
-  return node.trunk || state.show.has('events');
+  return (node.trunk && mode === 0) || state.show.has('events');
 };
+// How much of a node the blend between the representations shows, and whether it counts in the one that is on.
+const shownNow = (node) => (smooth(state.blend) < 0.5 ? node.inL : node.inT);
+const presence = (node, m) => (1 - m) * (node.inL ? 1 : 0) + m * (node.inT ? 1 : 0);
 const MIN_DUR = 0.02;
 function pack(items) {
   const ends = [];
@@ -255,7 +262,8 @@ function computeLayout() {
   }
 }
 function layoutAt() {
-  const shown = nodes.filter(visible); for (const node of nodes) node.shown = false; for (const node of shown) node.shown = true;
+  for (const node of nodes) { node.inL = visible(node, 0); node.inT = visible(node, 1); node.shown = node.inL || node.inT; }
+  const shown = nodes.filter((node) => node.inL); const together = nodes.filter((node) => node.inT);
   floors = [];
   let y = 0; let z = 0;
   for (let level = 0; level <= state.depth; level += 1) {
@@ -280,7 +288,7 @@ function layoutAt() {
   // Together: one field, each group's processes as rows with its Events in lanes in front of them.
   rows = []; z = 0;
   for (const group of GROUPS) {
-    const mine = shown.filter((node) => node.group === group.key); if (!mine.length) continue;
+    const mine = together.filter((node) => node.group === group.key); if (!mine.length) continue;
     const start = z;
     for (const node of mine.filter((item) => item.kind === 'process').sort((a, b) => a.depth - b.depth)) { node.zT = z + ROW * 0.75; z += ROW; }
     const slow = mine.filter((node) => node.event?.role === 'slow'); const slowLanes = pack(slow);
@@ -290,7 +298,9 @@ function layoutAt() {
     z += lanes * LANE * 0.8;
     rows.push({ group, z0: start, z1: z }); z += GROUP_GAP * 1.4;
   }
-  for (const node of shown) node.yT = 0;
+  for (const node of together) node.yT = 0;
+  // A node in one representation only fades where it stands in that one.
+  for (const node of nodes) { if (node.inL && !node.inT) { node.yT = node.yL; node.zT = node.zL; } if (node.inT && !node.inL) { node.yL = node.yT; node.zL = node.zT; } }
   fitCamera();
 }
 
@@ -304,7 +314,7 @@ function freeRect() {
 function boxOf(mode) {
   const shown = nodes.filter((node) => node.shown); const ys = []; const zs = [];
   if (mode === 0) { for (const floor of floors) { ys.push(floor.y, floor.y + (floor.amp || 1)); zs.push(floor.z0, floor.z1); } }
-  else { ys.push(0, AMP * 1.25); zs.push(0, rows.length ? rows.at(-1).z1 : 1); }
+  else { ys.push(0, ampAt(1)); zs.push(0, rows.length ? rows.at(-1).z1 : 1); }
   if (!shown.length) { ys.push(0, 1); zs.push(0, 1); }
   return { x0: -LENGTH / 2 - 16, x1: LENGTH / 2 + 2, y0: Math.min(...ys) - 1.5, y1: Math.max(...ys) + (state.show.has('notes') ? 9 : 2), z0: Math.min(...zs) - (state.show.has('notes') ? 6 : 0), z1: Math.max(...zs) + 5 };
 }
@@ -326,6 +336,7 @@ function fitCamera() {
     cameraFor[mode] = { center, d: fit.d, ox: (fit.l + fit.r) / 2 - (rect.left + rect.right) / 2, oy, overflow: Math.max(0, height - room), height };
   }
   scroll = Math.min(scroll, cameraFor[state.mode].overflow);
+  placeCamera();
 }
 let scroll = 0;
 function placeCamera() {
@@ -340,20 +351,29 @@ const scrollBy = (dy) => { const max = Math.max(cameraFor[0].overflow, cameraFor
 // ---- drawing -----------------------------------------------------------------------------------------------------------------------
 // Where a node is drawn now: its lane in each representation, blended.
 const at = (node) => { const m = smooth(state.blend); return { y: node.yL + (node.yT - node.yL) * m, z: node.zL + (node.zT - node.zL) * m }; };
-const nearestShown = (id) => { for (let current = id, hops = 0; current && hops < 16; current = byId.get(current)?.parent, hops += 1) { const node = nodeById.get(current); if (node?.shown) return node; } return null; };
+const nearestShown = (id) => { for (let current = id, hops = 0; current && hops < 16; current = byId.get(current)?.parent, hops += 1) { const node = nodeById.get(current); if (node?.shown && shownNow(node)) return node; } return null; };
 // The point an Event's threads, readings and links start from: the top of its bar at time t, or of the nearest shown Event
 // that holds it.
 function anchor(eventId, t) {
-  const node = nearestShown(eventId); if (!node) return null; const p = at(node);
+  const node = nearestShown(eventId);
+  if (!node) {
+    // Together without Events: over the front of the group whose moment it is, as the processes view places its decisions.
+    const row = smooth(state.blend) >= 0.5 ? rows.find((item) => item.group.key === groupOf(byId.get(eventId)?.owner)) : null;
+    return row && Number.isFinite(t) ? { x: X(t), y: ampAt(1) * 0.8, z: row.z1 + 0.3, node: null, own: false } : null;
+  }
+  const p = at(node);
   const time = Math.max(node.t0, Math.min(node.t1, t ?? node.t0));
   return { x: X(time), y: p.y + (node.kind === 'sub' ? BAR * 1.6 : BAR) + 0.02, z: p.z, node, own: node.id === eventId };
 }
 const WHITE = color('#ffffff'); const DIM = color('#8a93a8'); const RIM = color('#101114');
-let hoverTargets = []; let lit = null; let litChain = new Set();
-const screen = (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, ok: v.z < 1 }; };
+let hoverTargets = []; let lit = null; let litChain = new Set(); let profile = null; let drawCount = 0; let threadTops = [];
+const scratch = new THREE.Vector3();
+const screen = (x, y, z) => { const v = scratch.set(x, y, z).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, ok: v.z < 1 }; };
+// Hover targets keep world positions; they are projected only when the pointer looks for one.
+const W = (x, y, z) => [x, y, z];
 function draw() {
   const m = smooth(state.blend); const left = -LENGTH / 2; const right = LENGTH / 2; const clampX = (x) => Math.max(left - 0.5, Math.min(right + 0.5, x));
-  tabulate();
+  const mark = [performance.now()]; drawCount += 1; tabulate(); mark.push(performance.now());
   for (const buffer of [grid, connectors, threads, arcs, noteLines, crests, walls, chips, glows]) buffer.begin();
   hoverTargets = [];
   const layerAlpha = 1 - m; const fieldAlpha = m;
@@ -369,56 +389,63 @@ function draw() {
   }
   // Nodes.
   for (const node of nodes) {
-    if (!node.shown) continue; const p = at(node); const hue = color(hueOf(node.owner)); const chain = litChain.has(node.id);
+    if (!node.shown) continue; const vis = presence(node, m); if (vis < 0.01) continue;
+    const p = at(node); const hue = color(hueOf(node.owner)); const chain = litChain.has(node.id); const live = shownNow(node);
     const x0 = X(node.t0); const x1 = X(node.t1); if (x1 < left - 1 || x0 > right + 1) continue;
     const a = clampX(x0); const b = clampX(x1); const wide = b - a;
     if (node.kind === 'process') {
-      const amp = AMP * (1 + 0.25 * m); const n = Math.max(2, Math.min(260, Math.ceil(wide / 0.4)));
+      const amp = ampAt(m); const n = Math.max(2, Math.min(260, Math.ceil(wide / 0.4)));
       const light = hue.clone().lerp(WHITE, 0.35); let px = null; let py = null; const samples = [];
       for (let i = 0; i < n; i += 1) {
         const x = a + (wide * i) / (n - 1); const t = timeAtX(x); const v = valueAt(node.points, t);
         const h = ((v - node.range[0]) / (node.range[1] - node.range[0] || 1)) * amp; const y = p.y + Math.max(0.04, h);
-        if (px !== null) { walls.quad(px, x, p.y, py, p.y, y, p.z, hue, 0, chain ? 0.36 : 0.2); crests.add(px, py, p.z, x, y, p.z, light, chain ? 1 : 0.8); }
+        if (px !== null) { walls.quad(px, x, p.y, py, p.y, y, p.z, hue, 0, (chain ? 0.42 : 0.28) * vis); crests.add(px, py, p.z, x, y, p.z, light, (chain ? 1 : 0.9) * vis); }
         px = x; py = y; samples.push([x, y]);
       }
       node.crest = samples;
-      hoverTargets.push({ kind: 'process', node, xs: samples.map(([x]) => x), pts: samples.map(([x, y]) => screen(x, y, p.z)) });
+      if (live) hoverTargets.push({ kind: 'process', node, xs: samples.map(([x]) => x), wpts: samples.map(([x, y]) => W(x, y, p.z)) });
       continue;
     }
     const event = node.event; const sub = node.kind === 'sub';
     const top = p.y + (sub ? BAR * 1.6 : BAR); const tint = hue.clone().lerp(WHITE, sub ? 0.15 : 0.3);
-    const alpha = (sub ? 0.05 : node.depth <= 1 ? 0.1 : 0.2) * (chain ? 2.5 : 1);
+    const alpha = (sub ? 0.05 : node.depth <= 1 ? 0.1 : 0.2) * (chain ? 2.5 : 1) * vis;
     if (wide > 0.12) {
       walls.quad(a, b, p.y, top, p.y, top, p.z, tint, sub ? alpha : 0.0, alpha * (sub ? 1 : 1.2));
-      crests.add(a, top, p.z, b, top, p.z, tint, chain ? 1 : sub ? 0.4 : node.depth <= 1 ? 0.5 : 0.75);
-      if (sub) crests.add(a, p.y, p.z, b, p.y, p.z, tint, 0.2);
-      if (x0 >= left) crests.add(a, p.y, p.z, a, top, p.z, tint, 0.8);
-      hoverTargets.push({ kind: sub ? 'sub' : 'event', node, seg: [screen(a, top, p.z), screen(b, top, p.z)] });
+      crests.add(a, top, p.z, b, top, p.z, tint, (chain ? 1 : sub ? 0.4 : node.depth <= 1 ? 0.5 : 0.75) * vis);
+      if (sub) crests.add(a, p.y, p.z, b, p.y, p.z, tint, 0.2 * vis);
+      if (x0 >= left) crests.add(a, p.y, p.z, a, top, p.z, tint, 0.8 * vis);
+      if (live) hoverTargets.push({ kind: sub ? 'sub' : 'event', node, wseg: [W(a, top, p.z), W(b, top, p.z)] });
     }
-    if (wide <= 1.2) { glows.add((a + b) / 2, top, p.z, tint.clone().lerp(WHITE, 0.4), chain ? 1 : 0.95, wide <= 0.12 ? 15 : 11); hoverTargets.push({ kind: sub ? 'sub' : 'event', node, pt: screen((a + b) / 2, top, p.z) }); }
+    if (wide <= 1.2) { glows.add((a + b) / 2, top, p.z, tint.clone().lerp(WHITE, 0.4), (chain ? 1 : 0.95) * vis, wide <= 0.12 ? 15 : 11); if (live) hoverTargets.push({ kind: sub ? 'sub' : 'event', node, wpt: W((a + b) / 2, top, p.z) }); }
     // The tree: a thread from each node up to the nearest shown node that holds it.
-    const parent = node.parent ? nearestShown(node.parent) : null;
+    const parent = node.parent && node.inL ? nearestShown(node.parent) : null;
     if (parent && layerAlpha > 0.01) {
       const q = at(parent); const x = Math.max(x0, X(parent.t0)); const holds = chain && litChain.has(parent.id);
       if ((x >= left && x <= right) || holds) connectors.add(clampX(x), top, p.z, clampX(x), q.y + (parent.kind === 'sub' ? 0 : 0.02), q.z, holds ? WHITE : tint, (holds ? 0.85 : 0.16) * layerAlpha, (holds ? 0.85 : 0.05) * layerAlpha);
     }
   }
   // Named processes hang from their home: a thread from the curtain's start to the Event that holds it.
-  for (const node of nodes) if (node.shown && node.kind === 'process' && layerAlpha > 0.01) {
+  for (const node of nodes) if (node.inL && node.kind === 'process' && layerAlpha > 0.01) {
     const home = nearestShown(node.parent); if (!home) continue; const p = at(node); const q = at(home); const x = X(Math.max(node.t0, home.t0)); const holds = litChain.has(node.id) && litChain.has(home.id);
     if ((x < left || x > right) && !holds) continue;
     connectors.add(clampX(x), p.y, p.z, clampX(x), q.y, q.z, holds ? WHITE : color(hueOf(node.owner)), (holds ? 0.8 : 0.2) * layerAlpha, (holds ? 0.8 : 0.06) * layerAlpha);
   }
-  // Events that move a named process: a thread from the Event to the crest of each process it moves, at the moment it begins.
+  // Events that move a named process, at the moment each begins: from a shown Event a thread to the crest of every process
+  // it moves; from one that is not shown, a thread through those crests, as in the processes view.
+  threadTops = [];
   if (state.show.has('processes')) for (const event of events) {
-    if (!event.processIds?.length || !Number.isFinite(event.start)) continue; const from = anchor(event.id, event.start); if (!from || !from.own || from.x < left || from.x > right) continue;
-    const lights = event.processIds.map((id) => nodeById.get(id)).filter((node) => node?.shown && event.start >= node.t0 && event.start <= node.t1);
-    if (!lights.length) continue; const on = litChain.has(event.id) || lights.some((node) => node === lit?.node);
-    for (const node of lights) {
-      const p = at(node); const v = valueAt(node.points, event.start); const y = p.y + Math.max(0.04, ((v - node.range[0]) / (node.range[1] - node.range[0] || 1)) * AMP * (1 + 0.25 * m));
-      threads.add(from.x, from.y, from.z, from.x, y, p.z, WHITE, on ? 0.9 : 0.22, on ? 0.9 : 0.45);
-      glows.add(from.x, y, p.z, WHITE, on ? 1 : 0.75, 10);
+    if (!event.processIds?.length || !Number.isFinite(event.start)) continue; const x = X(event.start); if (x < left || x > right) continue;
+    const lights = event.processIds.map((id) => nodeById.get(id)).filter((node) => node?.shown && shownNow(node) && event.start >= node.t0 && event.start <= node.t1);
+    if (!lights.length) continue; const from = anchor(event.id, event.start); const own = Boolean(from?.own);
+    const on = litChain.has(event.id) || lights.some((node) => node === lit?.node) || lit?.event === event;
+    const tops = lights.map((node) => { const p = at(node); const v = valueAt(node.points, event.start); return { y: p.y + Math.max(0.04, ((v - node.range[0]) / (node.range[1] - node.range[0] || 1)) * ampAt(m)), base: p.y, z: p.z }; }).sort((a, b) => a.z - b.z);
+    if (own) for (const top of tops) threads.add(from.x, from.y, from.z, x, top.y, top.z, WHITE, on ? 0.9 : 0.22, on ? 0.9 : 0.45);
+    else {
+      for (const top of tops) threads.add(x, top.base, top.z, x, top.y, top.z, WHITE, on ? 0.6 : 0.12, on ? 0.9 : 0.35);
+      for (let i = 1; i < tops.length; i += 1) threads.add(x, tops[i - 1].y, tops[i - 1].z, x, tops[i].y, tops[i].z, WHITE, on ? 0.95 : 0.5);
+      threadTops.push({ event, x, top: tops.reduce((a, b) => (b.y > a.y ? b : a)), weight: tops.length });
     }
+    for (const top of tops) { glows.add(x, top.y, top.z, WHITE, on ? 1 : 0.75, own ? 10 : 13); if (!own) hoverTargets.push({ kind: 'thread', event, wpt: W(x, top.y, top.z) }); }
   }
   // Decisions: a diamond over the moment, white once the model has drawn it.
   let d = 0; const matrix = new THREE.Matrix4(); const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -426,9 +453,9 @@ function draw() {
     const place = state.show.has('decisions') ? anchor(decision.eventId, decision.t) : null;
     if (!place || place.x < left || place.x > right) { diamond.setMatrixAt(d, hidden); d += 1; continue; }
     const y = place.y + 0.95; matrix.makeTranslation(place.x, y, place.z); diamond.setMatrixAt(d, matrix);
-    diamond.setColorAt(d, decision.drawn ? WHITE : color(hueOf(decision.owner)).lerp(WHITE, 0.2)); d += 1;
+    diamond.setColorAt(d, decision.drawn ? WHITE : color(hueOf(decision.owner)).clone().lerp(WHITE, 0.2)); d += 1;
     if (decision.drawn) glows.add(place.x, y, place.z, color(hueOf(decision.owner)), 0.9, 34);
-    hoverTargets.push({ kind: 'decision', decision, pt: screen(place.x, y, place.z) });
+    hoverTargets.push({ kind: 'decision', decision, wpt: W(place.x, y, place.z) });
   }
   diamond.count = d; diamond.instanceMatrix.needsUpdate = true; if (diamond.instanceColor) diamond.instanceColor.needsUpdate = true;
   // Lens readings: a small bar of each reading's answers over its moment, one row per lens.
@@ -442,7 +469,7 @@ function draw() {
       for (const answer of reading.answers.filter((item) => item.weight > 0).sort((a, b) => (a.key === 'remainder') - (b.key === 'remainder'))) {
         const width = w * answer.weight; chips.quad(x, x + width, y, y + h, y, y + h, place.z, color(lens.colorOf(answer.key)), alpha, alpha); x += width;
       }
-      hoverTargets.push({ kind: 'lens', lens, reading, pt: screen(place.x, y + h / 2, place.z), r: 20 });
+      hoverTargets.push({ kind: 'lens', lens, reading, wpt: W(place.x, y + h / 2, place.z), r: 20 });
     }
   });
   // Causal links: arcs between the Events they join.
@@ -454,7 +481,7 @@ function draw() {
     const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(a.x, a.y, a.z), mid, new THREE.Vector3(b.x, b.y, b.z)); const pts = curve.getPoints(28); const c = color(KIND[relation.kind] ?? KIND.other);
     const on = litChain.has(source.id) || litChain.has(target.id);
     for (let i = 1; i < pts.length; i += 1) arcs.add(pts[i - 1].x, pts[i - 1].y, pts[i - 1].z, pts[i].x, pts[i].y, pts[i].z, c, (on ? 1 : 0.55) * (0.35 + 0.65 * (i / pts.length)));
-    hoverTargets.push({ kind: 'causal', relation, pt: screen(mid.x * 0.5 + (a.x + b.x) / 4, (mid.y + Math.max(a.y, b.y)) / 2, mid.z), r: 10 });
+    hoverTargets.push({ kind: 'causal', relation, wpt: W(mid.x * 0.5 + (a.x + b.x) / 4, (mid.y + Math.max(a.y, b.y)) / 2, mid.z), r: 10 });
   }
   // The agent's notes: lights above and behind, threaded to the moments they are about.
   if (state.show.has('notes')) {
@@ -466,7 +493,7 @@ function draw() {
       const y = top + (k % 5) * 1.05; const z = zBack - Math.floor(k / 5) * 1.2; const [kind, hex] = NOTE[note.node.category] ?? ['Note', '#dddddd']; const c = color(hex);
       const on = lit?.note === note; glows.add(x, y, z, c, on ? 1 : 0.85, on ? 22 : 15);
       for (const id of note.events) { const place = anchor(id, Number.isFinite(byId.get(id).start) ? byId.get(id).start : byId.get(id).reach[0]); if (place && place.x >= left - 1 && place.x <= right + 1) noteLines.add(x, y, z, place.x, place.y, place.z, c, on ? 0.9 : 0.12, on ? 0.8 : 0.05); }
-      hoverTargets.push({ kind: 'note', note, noteKind: kind, pt: screen(x, y, z) });
+      hoverTargets.push({ kind: 'note', note, noteKind: kind, wpt: W(x, y, z) });
     }
   }
   // Prose: each part of the story at the moments it tells, in front of everything.
@@ -476,11 +503,12 @@ function draw() {
       const x = X(unit.t); if (x < left - 1 || x > right + 1) continue; const on = lit?.unit === unit;
       chips.quad(x - 0.35, x + 0.35, y, y + 0.9, y, y + 0.9, front, c, on ? 0.9 : 0.55, on ? 0.9 : 0.55);
       for (const tell of unit.tells ?? []) { const place = anchor(tell.eventId, byId.get(tell.eventId)?.start); if (place) threads.add(x, y + 0.9, front, place.x, place.y, place.z, c, on ? 0.9 : 0.16, on ? 0.7 : 0.05); }
-      hoverTargets.push({ kind: 'prose', unit, pt: screen(x, y + 0.45, front), r: 14 });
+      hoverTargets.push({ kind: 'prose', unit, wpt: W(x, y + 0.45, front), r: 14 });
     }
   }
   for (const buffer of [grid, connectors, threads, arcs, noteLines, crests, walls, chips, glows]) buffer.end();
-  labels.update(ticks);
+  mark.push(performance.now()); labels.update(ticks); mark.push(performance.now());
+  profile = { tabulate: mark[1] - mark[0], geometry: mark[2] - mark[1], labels: mark[3] - mark[2] };
   document.getElementById('span').innerHTML = `<b>${timeText(F.a)} – ${timeText(F.b)}</b> · ${spanText(F.a, F.b)}${F.w > 0.5 ? ' · years before the present, on a log scale' : ''}`;
 }
 
@@ -491,16 +519,16 @@ function tickMarks() {
   const taken = []; const room = (x) => taken.every((other) => Math.abs(other - x) * pxPer >= gap);
   // A tick at a step shows only where its neighbours at that step are far enough apart to read, and nothing is near it.
   const legible = (t, before, after) => Math.min(Math.abs(X(t) - X(before)), Math.abs(X(after) - X(t))) * pxPer >= gap * 0.9;
-  const tryAdd = (t, text, major, before, after) => { if (!(t >= F.a && t <= F.b)) return; const x = X(t); if (x < left || x > right || !room(x) || !legible(t, before, after)) return; taken.push(x); out.push({ t, x, text, major }); };
+  const tryAdd = (t, text, major, before, after) => { if (!(t >= F.a && t <= F.b)) return; const x = X(t); if (x < left || x > right || !room(x) || !legible(t, before, after)) return; taken.push(x); out.push({ t, x, text: typeof text === 'function' ? text() : text, major }); };
   const ages = [300000, 200000, 100000, 50000, 20000, 10000, 5000];
-  ages.forEach((age, i) => tryAdd(PRESENT - age, `${age.toLocaleString('en-GB')} years ago`, true, PRESENT - (ages[i - 1] ?? age * 1.5), PRESENT - (ages[i + 1] ?? age / 2)));
+  ages.forEach((age, i) => tryAdd(PRESENT - age, () => `${grouped(age)} years ago`, true, PRESENT - (ages[i - 1] ?? age * 1.5), PRESENT - (ages[i + 1] ?? age / 2)));
   for (const step of [1000, 500, 100, 50, 10, 5, 1]) {
     const from = Math.ceil(Math.max(F.a, PRESENT - 5000) / step) * step;
-    for (let year = from; year <= F.b && out.length < 400; year += step) if (year !== 0) tryAdd(year, yearText(year), step >= 100 || year % 100 === 0, year - step, year + step);
+    for (let year = from; year <= F.b && out.length < 400; year += step) if (year !== 0) tryAdd(year, () => yearText(year), step >= 100 || year % 100 === 0, year - step, year + step);
   }
   if (F.s < 12) for (const every of [6, 3, 1]) {
     for (let year = Math.floor(F.a); year <= Math.ceil(F.b); year += 1) for (let month = 0; month < 12; month += every) {
-      const t = year + month / 12; tryAdd(t, month === 0 ? `${year}` : F.s < 2 ? `${MONTHS[month]} ${year}` : MONTHS[month], month === 0, t - every / 12, t + every / 12);
+      const t = year + month / 12; tryAdd(t, () => (month === 0 ? `${year}` : F.s < 2 ? `${MONTHS[month]} ${year}` : MONTHS[month]), month === 0, t - every / 12, t + every / 12);
     }
   }
   if (F.s < 0.4) for (const every of [7, 1]) {
@@ -508,7 +536,7 @@ function tickMarks() {
     for (let ms = day0; ms <= day0 + F.s * 365.2425 * 86400000 + 86400000; ms += 86400000) {
       const date = new Date(ms); if (every === 7 && date.getUTCDay() !== 1) continue;
       const t = date.getUTCFullYear() + (ms - Date.UTC(date.getUTCFullYear(), 0, 1)) / (365.2425 * 86400000);
-      tryAdd(t, `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`, date.getUTCDate() === 1, t - every * day, t + every * day);
+      tryAdd(t, () => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`, date.getUTCDate() === 1, t - every * day, t + every * day);
     }
   }
   return out.sort((a, b) => a.x - b.x);
@@ -517,7 +545,7 @@ const rect = () => freeRect();
 
 // ---- labels: placed by priority, never over each other or the panels ------------------------------------------------------------
 const labels = (() => {
-  const layer = document.getElementById('labels'); const pool = new Map(); let used = new Set();
+  const layer = document.getElementById('labels'); const pool = new Map();
   const element = (key, className, html) => {
     let item = pool.get(key);
     if (!item) { const el = document.createElement('div'); el.className = `lbl ${className}`; layer.append(el); item = { el, html: null, w: 0, h: 0 }; pool.set(key, item); }
@@ -542,13 +570,13 @@ const labels = (() => {
     } else for (const row of rows) wanted.push({ key: `group:${row.group.key}`, cls: 'group', html: `<b style="color:${row.group.hue}">${esc(row.group.name)}</b>`, p: [left - 1.2, 0, (row.z0 + row.z1) / 2], ax: 1, ay: 0.5, pri: 950 });
     // Processes, at the left of what is on screen of them.
     for (const node of nodes) {
-      if (!node.shown || !node.crest?.length) continue; const p = at(node); const [x, y] = node.crest[0]; if (x > right - 4) continue;
+      if (!node.shown || !shownNow(node) || !node.crest?.length) continue; const p = at(node); const [x, y] = node.crest[0]; if (x > right - 4) continue;
       const hue = hueOf(node.owner); const who = people.get(node.owner)?.first;
       wanted.push({ key: `proc:${node.id}`, cls: 'process', html: `<span style="color:color-mix(in srgb, ${hue} 45%, #fff)">${esc(processName(node.process))}</span>${who && m > 0.5 ? '' : ''}`, p: [x + 0.3, Math.max(y, p.y + 0.3) + 0.25, p.z], ax: 0, ay: 1, pri: 700 + node.points.length });
     }
     // Events: the widest on screen first, then the ones the model says most about.
     for (const node of nodes) {
-      if (!node.shown || node.kind === 'process') continue; const p = at(node);
+      if (!node.shown || !shownNow(node) || node.kind === 'process') continue; const p = at(node);
       const x0 = Math.max(left, X(node.t0)); const x1 = Math.min(right, X(node.t1)); if (x1 < left || x0 > right) continue;
       const wide = x1 - x0; const top = p.y + (node.kind === 'sub' ? BAR * 1.6 : BAR);
       const big = node.depth <= 1 || wide > LENGTH * 0.25;
@@ -556,27 +584,30 @@ const labels = (() => {
       const x = wide > 1.2 ? x0 + 0.25 : (x0 + x1) / 2;
       wanted.push({ key: `ev:${node.id}`, cls: `event${big ? ' big' : ''}${node.kind === 'sub' ? ' sub' : ''}`, html: esc(words(node.event.name, big ? 52 : 40)), p: [x, top + 0.12, p.z], ax: wide > 1.2 ? 0 : 0.5, ay: 1, pri });
     }
+    for (const thread of threadTops) if (thread.weight >= 2) wanted.push({ key: `thr:${thread.event.id}`, cls: 'event', html: esc(words(thread.event.name, 40)), p: [thread.x, thread.top.y + 0.5, thread.top.z], ax: 0.5, ay: 1, pri: 300 + thread.weight * 25 + (litChain.has(thread.event.id) ? 400 : 0) });
     if (state.show.has('prose')) {
       const front = (1 - m) * (floors.at(-1)?.z1 ?? 0) + m * (rows.at(-1)?.z1 ?? 0) + 2.6; const y = (1 - m) * (floors.at(-1)?.y ?? 0) + 1.25;
       for (const unit of prose) { const x = X(unit.t); if (x >= left && x <= right) wanted.push({ key: `prose:${unit.id}`, cls: 'prose', html: esc(unit.title ?? ''), p: [x, y, front], ax: 0.5, ay: 1, pri: 800 }); }
     }
-    // Place: highest priority first, each where it overlaps nothing already placed.
+    // Place: highest priority first, each where it overlaps nothing already placed. The page is read first (panels and
+    // any label not yet measured), then written, so the layout is computed once.
     const panels = [...document.querySelectorAll('.hud.panel, .hud.bar, .hud.title')].map((el) => el.getBoundingClientRect()).filter((r) => r.width);
     const placed = [...panels.map((r) => ({ l: r.left - 6, r: r.right + 6, t: r.top - 4, b: r.bottom + 4 }))];
-    const next = new Set();
     wanted.sort((a, b) => b.pri - a.pri);
-    for (const want of wanted) {
-      const item = element(want.key, want.cls, want.html); const s = want.sp ? { x: want.sp[0], y: want.sp[1], ok: true } : screen(...want.p);
-      if (!s.ok || s.x < -200 || s.x > innerWidth + 200) continue;
-      if (!item.w) { item.el.style.transform = 'translate(-9999px,0)'; item.w = item.el.offsetWidth; item.h = item.el.offsetHeight; }
+    const items = wanted.map((want) => element(want.key, want.cls, want.html));
+    const fresh = items.filter((item) => !item.w); for (const item of fresh) item.el.style.transform = 'translate(-9999px,0)';
+    for (const item of fresh) { item.w = item.el.offsetWidth; item.h = item.el.offsetHeight; }
+    const next = new Map();
+    wanted.forEach((want, i) => {
+      const item = items[i]; const s = want.sp ? { x: want.sp[0], y: want.sp[1], ok: true } : screen(...want.p);
+      if (!s.ok || s.x < -200 || s.x > innerWidth + 200) return;
       const l = s.x - item.w * want.ax; const t = s.y - item.h * want.ay; const box = { l, r: l + item.w, t, b: t + item.h };
-      if (box.l < 2 || box.r > innerWidth - 2 || box.t < 2 || box.b > innerHeight - 2) continue;
-      if (placed.some((o) => box.l < o.r + 3 && box.r > o.l - 3 && box.t < o.b + 1 && box.b > o.t - 1)) continue;
-      placed.push(box); next.add(want.key); item.el.style.transform = `translate(${Math.round(l)}px, ${Math.round(t)}px)`; item.el.classList.remove('hide');
-    }
-    for (const key of used) if (!next.has(key)) pool.get(key)?.el.classList.add('hide');
-    for (const [key, item] of pool) if (!next.has(key) && !used.has(key)) item.el.classList.add('hide');
-    used = next;
+      if (box.l < 2 || box.r > innerWidth - 2 || box.t < 2 || box.b > innerHeight - 2) return;
+      if (placed.some((o) => box.l < o.r + 3 && box.r > o.l - 3 && box.t < o.b + 1 && box.b > o.t - 1)) return;
+      placed.push(box); next.set(want.key, [item, Math.round(l), Math.round(t)]);
+    });
+    for (const [item, l, t] of next.values()) { const transform = `translate(${l}px, ${t}px)`; if (item.transform !== transform) { item.el.style.transform = transform; item.transform = transform; } if (item.hidden !== false) { item.el.classList.remove('hide'); item.hidden = false; } }
+    for (const [key, item] of pool) if (!next.has(key) && item.hidden !== true) { item.el.classList.add('hide'); item.hidden = true; }
   }
   return { update };
 })();
@@ -665,18 +696,19 @@ const distToSeg = (p, a, b) => { const dx = b.x - a.x; const dy = b.y - a.y; con
 function hover() {
   hoverDirty = false; let best = null; let bestD = Infinity;
   if (pointer && !drag?.moved) for (const target of hoverTargets) {
+    if (target.drawn !== drawCount) { target.drawn = drawCount; if (target.wpt) target.pt = screen(...target.wpt); if (target.wseg) target.seg = target.wseg.map((w) => screen(...w)); if (target.wpts) target.pts = target.wpts.map((w) => screen(...w)); }
     let d = Infinity;
     if (target.pt) d = Math.hypot(target.pt.x - pointer.x, target.pt.y - pointer.y) - (target.r ?? 11) + 11;
     else if (target.seg) d = distToSeg(pointer, target.seg[0], target.seg[1]) + 2;
     else if (target.pts) for (let i = 1; i < target.pts.length; i += 1) { const e = distToSeg(pointer, target.pts[i - 1], target.pts[i]) + 1; if (e < d) { d = e; target.near = i; } }
-    const priority = { decision: -4, lens: -3, note: -2, prose: -3, causal: 0, process: 0, event: 1, sub: 2 }[target.kind] ?? 0;
+    const priority = { decision: -4, lens: -3, note: -2, prose: -3, thread: -1, causal: 0, process: 0, event: 1, sub: 2 }[target.kind] ?? 0;
     if (d < 11 && d + priority < bestD) { bestD = d + priority; best = target; }
   }
-  const same = best && lit && (best.node ?? best.decision ?? best.reading ?? best.note ?? best.unit ?? best.relation) === (lit.node ?? lit.decision ?? lit.reading ?? lit.note ?? lit.unit ?? lit.relation);
+  const same = best && lit && (best.node ?? best.event ?? best.decision ?? best.reading ?? best.note ?? best.unit ?? best.relation) === (lit.node ?? lit.event ?? lit.decision ?? lit.reading ?? lit.note ?? lit.unit ?? lit.relation);
   if (!same) {
     lit = best; litChain = new Set();
     if (best?.node) { for (let id = best.node.id, hops = 0; id && hops < 16; id = (nodeById.get(id)?.parent) ?? null, hops += 1) litChain.add(id); }
-    for (const id of [best?.decision?.eventId, best?.reading?.eventId, ...(best?.note?.events ?? []), ...(best?.unit?.tells ?? []).map((tell) => tell.eventId), best?.relation?.source, best?.relation?.target]) if (id) for (let at = id, hops = 0; at && hops < 16; at = byId.get(at)?.parent, hops += 1) litChain.add(at);
+    for (const id of [best?.event?.id, best?.decision?.eventId, best?.reading?.eventId, ...(best?.note?.events ?? []), ...(best?.unit?.tells ?? []).map((tell) => tell.eventId), best?.relation?.source, best?.relation?.target]) if (id) for (let at = id, hops = 0; at && hops < 16; at = byId.get(at)?.parent, hops += 1) litChain.add(at);
     dirty = true;
   }
   if (!best) { tip.hidden = true; canvas.style.cursor = ''; return; }
@@ -690,8 +722,8 @@ const weights = (answers, colorOf, drawn) => { const box = document.createElemen
   return box; };
 function showTip(target) {
   tip.replaceChildren();
-  if (target.kind === 'event' || target.kind === 'sub') {
-    const { event } = target.node; const holder = event.parent ? byId.get(event.parent) : null; const who = people.get(event.owner)?.person.name ?? referents.get(event.owner)?.short ?? 'The world';
+  if (target.kind === 'event' || target.kind === 'sub' || target.kind === 'thread') {
+    const event = target.event ?? target.node.event; const holder = event.parent ? byId.get(event.parent) : null; const who = people.get(event.owner)?.person.name ?? referents.get(event.owner)?.short ?? 'The world';
     const scaffold = scaffoldOf.get(event.id);
     const roles = { world: 'The world', development: 'A long development', life: 'A life', inner: 'An inner life', period: 'A period of a life', arc: 'A change arc', phase: 'A phase of a change arc', slow: 'A slow process of a life', part: 'A part', moment: 'A moment' };
     tip.append(line('k', `${roles[event.role] ?? 'An Event'} · level ${event.depth} · ${who}`), line('v', clip(event.label, 200)));
@@ -784,7 +816,7 @@ buildPanel();
 const titleText = params.get('title') ?? data.title ?? 'Story Explorer';
 document.getElementById('title').textContent = titleText;
 document.getElementById('sub').textContent = `${events.length} Events in a tree ${MAX_DEPTH + 1} levels deep, from ${timeText(EARLIEST, 1e6)} to ${Math.round(PRESENT)}, with ${named.length} named processes, `
-  + `${data.processes.length - named.length} subsidiary ones and ${lenses.length} lenses. Zoom from a moment to world history; add detail on the right.`;
+  + `${data.processes.length - named.length} subsidiary ones and ${lenses.length} ${lenses.length === 1 ? 'lens' : 'lenses'}. Zoom from a moment to world history; add detail on the right.`;
 const inline = (text) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
 function openReader(unitId = null) {
   const reader = document.getElementById('reader'); const body = document.getElementById('reader-body'); body.replaceChildren(); reader.hidden = false; let target = null;
@@ -817,16 +849,17 @@ if (params.has('t0') && params.has('t1')) { setView(Math.max(BOUNDS[0], Number(p
 else if (params.has('focus') && byId.has(params.get('focus'))) { const event = byId.get(params.get('focus')); const span = Math.max(0.02, (event.reach[1] - event.reach[0]) * 1.6); const [a, b] = windowAt((event.reach[0] + event.reach[1]) / 2, 0.5, span); setView(a, b); }
 else { if (params.get('life')) lifeTurn = Math.max(0, lives.findIndex((life) => life.name.toLowerCase() === params.get('life').toLowerCase())); preset(params.get('zoom') ?? 'story', false); }
 if (params.has('read')) openReader();
-let last = performance.now(); const drawTimes = [];
+let last = performance.now(); let lastHover = 0; const drawTimes = [];
 // For captures and tests: the window on screen, the time under a point, and what each redraw costs.
-window.explorer = { view: () => ({ a: F.a, b: F.b, warp: F.w, mode: state.mode, depth: state.depth, scroll }), timeAt: (x, y) => pointerTime(x, y).t, drawTimes: () => [...drawTimes] };
+window.explorer = { view: () => ({ a: F.a, b: F.b, warp: F.w, mode: state.mode, depth: state.depth, scroll }), timeAt: (x, y) => pointerTime(x, y).t, drawTimes: () => [...drawTimes],
+  zoom: (x, y, factor) => zoomAt(x, y, factor), profile: () => profile, redraw: () => { const began = performance.now(); if (relayout) { relayout = false; computeLayout(); } placeCamera(); draw(); composer.render(); return performance.now() - began; } };
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (animation) animation(now);
   const target = state.mode; if (Math.abs(state.blend - target) > 0.001) { state.blend += Math.sign(target - state.blend) * Math.min(Math.abs(target - state.blend), dt / 0.9); dirty = true; } else state.blend = target;
   if (relayout) { relayout = false; computeLayout(); dirty = true; }
-  if (dirty) { dirty = false; const began = performance.now(); placeCamera(); draw(); drawTimes.push(performance.now() - began); if (drawTimes.length > 120) drawTimes.shift(); hoverDirty = true; }
-  if (hoverDirty) hover();
+  if (dirty) { dirty = false; const began = performance.now(); placeCamera(); draw(); drawTimes.push(performance.now() - began); if (drawTimes.length > 120) drawTimes.shift(); if (pointer) hoverDirty = true; }
+  if (hoverDirty && (!pointer || now - lastHover > (animation || drag?.moved ? 90 : 0))) { lastHover = now; hover(); }
   composer.render();
   requestAnimationFrame(frame);
 }
