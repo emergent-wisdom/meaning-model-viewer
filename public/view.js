@@ -286,18 +286,18 @@ function pack(items) {
 let floors = []; let layersBounds = null;
 function computeLayout() {
   for (const node of nodes) { node.inT = visibleNode(node, false); node.inL = visibleNode(node, true); node.shown = node.inT || node.inL; }
-  // Together: the rows as they always were, and each group's Events in lanes in front of its rows.
-  let zz = 0;
-  for (const group of groups) {
-    for (const row of rows.filter((item) => item.group === group)) { row.zT = zz; zz += ROW; }
-    const mine = nodes.filter((node) => node.inT && node.group === group.id);
-    const lanes = pack(mine); for (const node of mine) node.zT = zz + node.lane * LANE * 0.8 + LANE * 0.4; zz += lanes * LANE * 0.8;
-    zz += GAP - ROW;
+  // Together: the rows as they always were, and beneath each group's curtains the Events and subsidiary processes of its
+  // tree, one floor further down for each level, spread across the group's rows.
+  let zz = 0; const spans = [];
+  for (const group of groups) { const z0 = zz; for (const row of rows.filter((item) => item.group === group)) { row.zT = zz; zz += ROW; } spans.push({ group, z0, z1: zz - ROW }); zz += GAP - ROW; }
+  const spanT = zz - GAP; for (const row of rows) row.zT -= spanT / 2;
+  for (const { group, z0, z1 } of spans) {
+    const mine = nodes.filter((node) => node.inT && (node.group === group.id || (group.id === 'world' && !groups.some((other) => other.id === node.group))));
+    for (const level of [...new Set(mine.map((node) => node.depth))].sort((a, b) => a - b)) {
+      const here = mine.filter((node) => node.depth === level); const lanes = pack(here); const width = Math.max(ROW, z1 - z0);
+      for (const node of here) { node.yT = -1.6 * Math.max(1, level); node.zT = z0 - spanT / 2 + (lanes > 1 ? (node.lane / (lanes - 1)) * width : width / 2); }
+    }
   }
-  const loose = nodes.filter((node) => node.inT && !groups.some((group) => group.id === node.group));
-  if (loose.length) { const lanes = pack(loose); for (const node of loose) node.zT = zz + node.lane * LANE * 0.8 + LANE * 0.4; zz += lanes * LANE * 0.8 + GAP - ROW; }
-  const spanT = zz - GAP; for (const row of rows) row.zT -= spanT / 2; for (const node of nodes) if (node.inT) node.zT -= spanT / 2;
-  for (const node of nodes) if (node.inT) node.yT = 0;
   // Layers: floors of the tree.
   floors = []; let y = 0; zz = 0;
   for (let level = 0; level <= opt.depth; level += 1) {
@@ -389,7 +389,8 @@ for (const event of data.events) {
   const group = new THREE.Group(); group.userData = { t: event.start, event, touched, lines: [], sparks: [] };
   for (const row of touched) {
     const stem = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)), additive('#ffffff', 0.35)); stem.frustumCulled = false; group.add(stem); group.userData.lines.push(stem);
-    const s = spark('#ffffff', 1.5); s.userData.hover = { kind: 'Event', title: event.label, text: event.description, about: touched.map((item) => NAMES[item.measure.id] ?? item.measure.id) }; group.add(s); eventSparks.push(s); group.userData.sparks.push(s);
+    const s = spark('#ffffff', 1.5); s.userData.hover = { kind: 'Event', title: event.label, text: event.description, about: touched.map((item) => NAMES[item.measure.id] ?? item.measure.id),
+      values: touched.map((item) => `${NAMES[item.measure.id] ?? item.measure.id}: ${format(item, valueAt(item.measure.points, event.start))}`) }; group.add(s); eventSparks.push(s); group.userData.sparks.push(s);
   }
   if (touched.length > 1) { const link = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(touched.length * 3), 3)), additive('#fff3d6', 0.9)); link.frustumCulled = false; group.add(link); group.userData.link = link; }
   field.add(group); threads.push(group);
@@ -897,6 +898,15 @@ function applyTerrain() {
   terrain.threads.geometry.setDrawRange(0, terrain.threadCount * 2); terrain.threads.visible = opt.edges && thoughts;
   drawTerrainArcs();
 }
+// The number a ridge stands for where the pointer is: a named process's exact value, a series' share of its main answer, a
+// life's level (1 at a shock's height, 0.28 through a period), or how busy a process or development is against its busiest.
+function terrainNumber(row, t, u) {
+  const sample = row.samples?.[Math.max(0, Math.min(TNX - 1, Math.round(u * (TNX - 1))))] ?? 0;
+  if (row.kind === 'named') { const field2 = rowOf.get(row.id.slice(6)); if (field2) return [['num', format(field2, valueAt(field2.measure.points, Math.max(field2.measure.points[0].t, Math.min(field2.measure.points.at(-1).t, t))))], ['a', `Unit: ${field2.measure.unit ?? 'not given'}`]]; }
+  if (row.kind === 'series') return [['num', `${Math.round(sample * 100)}%`], ['a', 'The share of its main answer at this moment']];
+  if (row.kind === 'life') return [['num', sample.toFixed(2)], ['a', '1 is a shock at its height, 0.28 a period of the life']];
+  return [['num', `${Math.round(sample * 100)}%`], ['a', 'How much happens in it here, against its busiest moment']];
+}
 // Causal links over the terrain: from the top of one event's beam to the other's, else from where the life it belongs to stands.
 function terrainPoint(event) {
   const beam = terrain.beamOf.get(event.id); if (beam) return new THREE.Vector3(beam.position.x, beam.scale.y, beam.position.z);
@@ -977,7 +987,7 @@ function hoverTerrain() {
   } else {
     const ground = ray.intersectObject(terrain.mesh, false)[0];
     if (ground) { row = terrain.rows.reduce((best, other) => (Math.abs(other.z - ground.point.z) < Math.abs((best?.z ?? Infinity) - ground.point.z) ? other : best), null);
-      if (row) lines.push(['k', row.group.label], ['v', row.label], ['m', timeText(timeAt(F, ground.point.x / LENGTH + 0.5), 2)]); }
+      if (row) { const u = ground.point.x / LENGTH + 0.5; const t = timeAt(F, u); lines.push(['k', row.group.label], ['v', row.label], ...terrainNumber(row, t, u), ['m', timeText(t, 2)]); } }
   }
   highlightRow(row);
   if (!lines.length) { tip.hidden = true; renderer.domElement.style.cursor = ''; return; }
@@ -1064,13 +1074,14 @@ function apply() {
     setText('clock', isStory() ? month(Math.min(now, T1 - 0.01)) : momentText(Math.min(now, F.b - 0.01)));
     const drawn = (thread) => Math.max(thread.userData.t, F.a);
     const latest = threads.filter((thread) => thread.userData.t <= now && inView(thread.userData.t, 0.2)).sort((a, b) => drawn(b) - drawn(a))[0];
-    setText('kind', latest ? momentText(drawn(latest)) : 'The story');
+    const part = storyParts[partNow()];
+    setText('kind', `${latest ? momentText(drawn(latest)) : 'The story'}${part ? ` · Part ${part.n}: ${part.title}` : ''}`);
     setText('text', latest ? clip(`${latest.userData.event.label} ${latest.userData.event.description ?? ''}`, 330) : '');
   }
   showStats();
   // The story's text, as far as the play has come.
   if (!document.getElementById('reader').hidden) { const key = readerUnits().length; if (key !== readerShown) renderReader(); }
-  applyTerrain(); drawNotes(); drawArcs(); extrasDirty = true;
+  applyTerrain(); drawNotes(); drawArcs(); syncStrip(); extrasDirty = true;
 }
 function stop() { playing = false; clearInterval(timer); setText('play', '▶'); apply(); syncURL(); }
 function play() {
@@ -1150,7 +1161,8 @@ const homeOf = (key) => (key === 'terrain' ? terrain.home : HOME);
 // The thoughts above do not count: the camera is the same with them or without.
 function fieldFrame() {
   const m = smooth(blend.now); const layers = layersBounds && m > 0.01;
-  const z0 = Math.min(zBackNow(), layers ? layersBounds.z0 : Infinity); const z1 = Math.max(laneAt().z, zFrontNow()); const y0 = layers ? Math.min(0, layersBounds.y0 * m) : 0;
+  const below = Math.min(0, ...nodes.filter((node) => node.inT && presence(node) > 0.5).map((node) => node.yT));
+  const z0 = Math.min(zBackNow(), layers ? layersBounds.z0 : Infinity); const z1 = Math.max(laneAt().z, zFrontNow()); const y0 = Math.min(layers ? layersBounds.y0 * m : 0, below * (1 - m));
   return { size: Math.hypot(LENGTH * 0.6, z1 - z0, (AMP - y0) * 1.5), cz: (z0 + z1) / 2, cy: (y0 + AMP) / 2 };
 }
 const HOME_FRAME = { size: Math.hypot(LENGTH * 0.6, zFront + 6.5 - zBack, AMP * 1.5), cz: (zBack + zFront + 6.5) / 2, cy: AMP / 2 };
@@ -1314,6 +1326,49 @@ document.getElementById('reader-download').addEventListener('click', () => {
   document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 2000);
 });
 if (params.has('read')) { document.getElementById('read').click(); if (params.get('read') === 'full') fullReader(true); }
+
+// ---- the story's own time: its parts in reading order -----------------------------------------------------------------------------
+// The world has its years; the story has its parts, one after another as they are read. The strip holds them, each as long as
+// its words, and lights the one the play is in: in the story's years the part that tells that moment, in the construction the
+// part the agent was writing. Point at a part to read where it stands in the world; click it to go there and read it.
+const storyParts = (data.story?.units ?? []).filter((unit) => unit.role !== 'document_root' && String(unit.text ?? '').trim())
+  .map((unit, i) => ({ unit, n: i + 1, title: String(unit.title ?? '').replace(/^[A-Za-z]+:\s*/, '') || `Part ${i + 1}`, words: (String(unit.text).match(/\S+/g) ?? []).length }));
+let overStrip = false; let partShown = null;
+if (storyParts.length) {
+  document.getElementById('strip').hidden = false; document.body.classList.add('has-strip');
+  for (const part of storyParts) {
+    const button = document.createElement('button'); button.className = 'part'; button.style.flex = String(Math.max(1, part.words)); button.textContent = `${part.n} ${part.title}`; part.el = button;
+    button.addEventListener('mousemove', (event) => { overStrip = true; showPartTip(part, event); }); button.addEventListener('mouseleave', () => { overStrip = false; tip.hidden = true; });
+    button.addEventListener('click', () => goToPart(part)); document.getElementById('parts').append(button);
+  }
+}
+const partSpan = (part) => [part.unit.t, storyParts[part.n]?.unit.t ?? T1];
+function partNow() {
+  if (building()) { let at = -1; storyParts.forEach((part, i) => { if (bornAt(part.unit) <= tau) at = i; }); return at; }
+  if (atEnd && !playing) return -1;
+  let at = -1; storyParts.forEach((part, i) => { if (Number.isFinite(part.unit.t) && part.unit.t <= now) at = i; }); return at;
+}
+function syncStrip() {
+  const at = partNow(); if (at === partShown) return; partShown = at;
+  storyParts.forEach((part, i) => { part.el.classList.toggle('on', i === at); part.el.classList.toggle('read', at >= 0 && i < at); });
+}
+function partLines(part) {
+  const [a, b] = partSpan(part); const tells = (part.unit.tells ?? []).map((tell) => byId.get(tell.eventId)).filter(Boolean);
+  return [['k', `Part ${part.n} of ${storyParts.length} · ${part.words.toLocaleString('en-GB')} words`], ['v', part.unit.title || part.title],
+    ['m', Number.isFinite(a) ? `In the world: ${month(a)}${Number.isFinite(b) && b > a + 0.05 ? ` to ${month(b)}` : ''}` : 'Where it stands in the world is not known'],
+    ...(tells.length ? [['a', 'The moments it tells, matched by its words: the model does not link its parts to Events'], ...tells.map((event) => ['num-line', `${timeText(event.start, 2)}: ${clip(event.label, 90)}`])] : []),
+    ['a', 'Click to go there and read it']];
+}
+function showPartTip(part, event) {
+  tip.replaceChildren(...partLines(part).map(([cls, text]) => tipLine(cls, text))); tip.hidden = false; const w = tip.offsetWidth; const h = tip.offsetHeight;
+  tip.style.left = `${Math.min(innerWidth - w - 12, Math.max(12, event.clientX - w / 2))}px`; tip.style.top = `${Math.max(12, event.clientY - h - 18)}px`;
+}
+function goToPart(part) {
+  stop();
+  if (building()) { tau = Math.max(C0, Math.min(C1, bornAt(part.unit))); atEnd = tau >= C1; }
+  else if (Number.isFinite(part.unit.t)) { now = Math.max(F.a, Math.min(F.b, part.unit.t + 0.002)); atEnd = false; }
+  apply(); syncURL(); document.getElementById('reader').hidden = false; renderReader(part.unit.id);
+}
 
 const thoughtsButton = document.getElementById('thoughts');
 const showThoughts = (on) => { if (on) opt.show.add('notes'); else opt.show.delete('notes'); mind.visible = on; thoughtsButton.classList.toggle('on', on); thoughtsButton.textContent = on ? 'Hide thoughts' : 'Thoughts'; if (!on) tip.hidden = true; syncPanel(); syncURL(); dirty = true; };
@@ -1544,6 +1599,7 @@ function declutter() {
 const distToSeg = (p, a, b) => { const dx = b.x - a.x; const dy = b.y - a.y; const k = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(p.x - a.x - k * dx, p.y - a.y - k * dy); };
 const tipLine = (cls, text) => { const el = document.createElement('div'); el.className = cls; el.textContent = text; return el; };
 function hover() {
+  curtainMark.visible = false; if (overStrip) return;
   if (terrain.on) { hoverTerrain(); return; }
   if (!pointerAt) return;
   // The nearest light on screen within 16 pixels: the lights are small, so a pointer near one reads it.
@@ -1573,6 +1629,9 @@ function hover() {
   let arc = null; if (!hit) { let bestArc = 8; for (const target of arcTargets) for (let i = 1; i < target.pts.length; i += 1) { const a = screen(target.pts[i - 1].x, target.pts[i - 1].y, target.pts[i - 1].z); const b = screen(target.pts[i].x, target.pts[i].y, target.pts[i].z); if (!a.ok || !b.ok) continue; const d = distToSeg(pointerAt, a, b); if (d < bestArc) { bestArc = d; arc = target; } } }
   if (arc !== litArc) { litArc = arc; drawArcs(); }
   if (arc) { if (lit) { lit = null; drawNotes(); } renderer.domElement.style.cursor = 'help'; tip.replaceChildren(...arcLines(arc).map(([cls, text]) => tipLine(cls, text))); placeTip(); return; }
+  // A curtain under the pointer: its process's exact value at that moment.
+  const curtain = hit ? null : curtainAt(pointerAt); curtainMark.visible = Boolean(curtain) && field.visible;
+  if (curtain) { if (lit) { lit = null; drawNotes(); } renderer.domElement.style.cursor = 'crosshair'; tip.replaceChildren(...curtainLines(curtain).map(([cls, text]) => tipLine(cls, text))); placeTip(); return; }
   if (!hit) { tip.hidden = true; renderer.domElement.style.cursor = ''; if (lit) { lit = null; drawNotes(); } return; }
   if (lit !== hit) { lit = hit; drawNotes(); }
   const info = hit.userData.hover; renderer.domElement.style.cursor = 'help';
@@ -1582,10 +1641,40 @@ function hover() {
   if (info.title && !repeats) { const title = document.createElement('div'); title.className = 'v'; title.textContent = info.title; tip.append(title); }
   if (info.text && info.text !== info.title) { const text = document.createElement('div'); text.className = 'm'; text.textContent = info.text; tip.append(text); }
   if (info.about?.length) { const about = document.createElement('div'); about.className = 'a'; about.textContent = hit.userData.decision ? info.about.join(' · ') : `${info.kind === 'Event' ? 'Moves' : 'About'}: ${info.about.slice(0, 6).join(' · ')}`; tip.append(about); }
+  if (info.values?.length) { tip.append(tipLine('a', 'At this moment')); for (const line of info.values) tip.append(tipLine('num-line', line)); }
   if (info.attached) { if (!info.attached.length) tip.append(tipLine('a', 'Attached to nothing in the model: a note of the agent’s own.')); else { tip.append(tipLine('a', 'Attached to')); for (const line of info.attached) tip.append(tipLine('a', line)); } }
   placeTip();
 }
 let quietAt = null; // where a click opened the details: no tooltip there until the pointer moves
+// The curtain under a point on screen, the time there and the exact value of its process, marked on its crest.
+const wallRay = new THREE.Raycaster(); const wallNdc = new THREE.Vector2(); const curtainMark = spark('#ffffff', 1.3); curtainMark.visible = false; field.add(curtainMark);
+// The bright top line nearest the pointer names the curtain (they stand one behind another); else the curtain in front of it.
+function curtainAt(point) {
+  let best = null; let bestD = 14; const STEP = 5;
+  for (const row of rows) {
+    if (!row.wall.visible || presence(row) <= 0.5) continue; const array = row.crest.geometry.attributes.position.array; const upto = Math.min(NX, row.crest.geometry.drawRange.count); let prev = null;
+    for (let i = 0; i < upto; i += i + STEP >= upto && i !== upto - 1 ? upto - 1 - i : STEP) {
+      const at = screen(array[i * 3], array[i * 3 + 1], array[i * 3 + 2]);
+      if (prev && at.ok && prev.at.ok) { const dx = at.x - prev.at.x; const dy = at.y - prev.at.y; const k = Math.max(0, Math.min(1, ((point.x - prev.at.x) * dx + (point.y - prev.at.y) * dy) / (dx * dx + dy * dy || 1))); const d = Math.hypot(point.x - prev.at.x - k * dx, point.y - prev.at.y - k * dy);
+        if (d < bestD) { bestD = d; best = { row, t: row.sampleT[prev.i] + k * (row.sampleT[i] - row.sampleT[prev.i]) }; } }
+      prev = { at, i }; if (i === upto - 1) break;
+    }
+  }
+  if (!best) {
+    wallNdc.set((point.x / innerWidth) * 2 - 1, -(point.y / innerHeight) * 2 + 1); wallRay.setFromCamera(wallNdc, camera);
+    const hit = wallRay.intersectObjects(rows.filter((row) => row.wall.visible && presence(row) > 0.5).map((row) => row.wall), false)[0]; if (!hit) return null;
+    const row = rows.find((item) => item.wall === hit.object); best = { row, t: timeAtX(hit.point.x) };
+  }
+  const { row } = best; const t = Math.max(row.domain[0], Math.min(row.domain[1], best.t)); const p = rowAt(row);
+  curtainMark.position.set(X(t), p.y + heightAt(row, t) + 0.05, p.z); return { row, t };
+}
+function curtainLines({ row, t }) {
+  const points = row.measure.points; const v = valueAt(points, t); const next = points.findIndex((point) => point.t > t);
+  const around = next === 0 ? `Held at its first authored value, ${format(row, points[0].v)} in ${month(points[0].t)}` : next < 0 ? `Held at its last authored value, ${format(row, points.at(-1).v)} in ${month(points.at(-1).t)}`
+    : `Between the authored ${format(row, points[next - 1].v)} in ${month(points[next - 1].t)} and ${format(row, points[next].v)} in ${month(points[next].t)}`;
+  return [['k', `${row.group.label} · a named process`], ['v', NAMES[row.measure.id] ?? row.measure.id], ['num', format(row, v)], ['m', momentText(t)], ['a', around],
+    ['a', `Unit: ${row.measure.unit ?? 'not given'} · on its own scale, ${format(row, row.range[0])} to ${format(row, row.range[1])}`]];
+}
 function placeTip() { if (quietAt && pointerAt && quietAt.x === pointerAt.x && quietAt.y === pointerAt.y) { tip.hidden = true; return; } quietAt = null; tip.hidden = false; const w = tip.offsetWidth; const h = tip.offsetHeight; tip.style.left = `${Math.min(innerWidth - w - 12, pointerAt.x + 16)}px`; tip.style.top = `${Math.min(innerHeight - h - 12, Math.max(12, pointerAt.y + 16))}px`; }
 const weightsBox = (answers, colorOf) => { const box = document.createElement('div'); box.className = 'w'; for (const answer of answers.slice(0, 6)) { const b = document.createElement('b'); b.textContent = `${Math.round(answer.weight * 100)}%`; if (colorOf) b.style.color = colorOf(answer.key); const i = document.createElement('i'); i.textContent = answer.key.replace(/[_.-]+/g, ' '); box.append(b, i); } return box; };
 function showExtraTip(target) {

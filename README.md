@@ -47,6 +47,15 @@ anything in the view to read what it is, and click it to keep that open beside t
   under **Details**. The causal links run as arcs between the events they link: point at one to read which event
   causes, enables or constrains which, and why.
 
+**The story's own time.** Below the view, a strip holds the story's parts in reading order, each as long as its words,
+and lights the part the play is in (in the construction, the part the agent was writing); the caption names it. Point
+at a part to see where it stands in the world's years, click it to go there and read it. The model does not link a
+story's parts to its Events, so where each part stands is matched by its words.
+
+**Numbers.** Pointing at a curtain gives its process's exact value at that moment with its unit, and the authored values
+on either side; an event gives the value of each process it moves; on the terrain, a ridge gives its number. Clicking
+keeps it open beside the view.
+
 Keys: `W` `A` `S` `D` walk through the view, `Q` and `E` go down and up, the arrows look around and `Shift` goes faster
 (the first step stops the spin; locked, `A` and `D` move through time and `W` and `S` zoom it); `1`–`4` the scales,
 `T` processes, `L` tree, `R` terrain, `Space` play, `C` the camera, `G` shining, `K` edges, `X` everything.

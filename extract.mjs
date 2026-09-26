@@ -330,6 +330,9 @@ if (routeNode) {
     if (moments.length) window = { start: Math.min(...moments.map((event) => event.start)), end: Math.max(...moments.map((event) => event.end ?? event.start)) };
   } catch { window = null; }
 }
+// The author's route: the story's parts in reading order, each with the Events it tells, as the author planned them.
+let storyRoute = null;
+if (routeNode) { try { const route = JSON.parse(routeNode.text).data; storyRoute = (route.parts ?? []).map((part, i) => ({ n: i + 1, ...Object.fromEntries(Object.entries(part).filter(([key, value]) => key !== 'eventIds' && (typeof value === 'string' || typeof value === 'number'))), eventIds: (part.eventIds ?? []).filter((id) => events.some((event) => event.id === id)) })); } catch { storyRoute = null; } }
 if (!window && storyTimes.length >= 2) window = { start: storyTimes[Math.floor(storyTimes.length * 0.05)], end: storyTimes[Math.ceil(storyTimes.length * 0.95) - 1] };
 const allStarts = events.map((event) => event.start).filter((t) => t !== null);
 const extent = allStarts.length ? { start: Math.min(...allStarts), end: Math.max(...events.map((event) => event.end ?? event.start).filter((t) => t !== null)) } : null;
@@ -507,7 +510,7 @@ const data = {
   generatedAt: new Date().toISOString(), run: runName, title: flag('--title') ?? display?.title ?? storyTitle ?? title ?? runName, display,
   contexts: (mm.context_roots ?? []).map((root) => ({ eventId: root.event_id, kind: root.kind, holder: rootHolder(root.event_id), label: clip(index.events.get(root.event_id)?.boundary, 160) })),
   timeUnit: unit, firstCall, lastCall: calls.at(-1)?.at ?? null, headGraphHash: history.headGraphHash ?? null, modelHash: boundModel,
-  window, extent, storyWindow, people, events, relations, draws, referents, processes, lenses,
+  window, extent, storyWindow, storyRoute, people, events, relations, draws, referents, processes, lenses,
   graph: { nodes: graphNodes, edges: graphEdges }, story, measures, steps, toolCalls,
   totals: { events: events.length, cuts: allCuts.length - withdrawn.size, people: people.length, lives: lives.length, thoughts: graphNodes.filter((node) => node.category === 'thought').length,
     passages: graphNodes.filter((node) => node.category === 'passage').length, words: storyWords ?? graphNodes.reduce((sum, node) => sum + node.words, 0), modelRevisions: history.models.length, graphRevisions: history.revisions.length },
