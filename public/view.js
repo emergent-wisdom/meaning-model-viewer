@@ -1261,7 +1261,20 @@ function renderReader(unitId = null) {
 document.getElementById('read').addEventListener('click', () => { const reader = document.getElementById('reader'); reader.hidden = !reader.hidden; if (!reader.hidden) renderReader(); });
 document.getElementById('reader-close').addEventListener('click', () => { document.getElementById('reader').hidden = true; });
 addEventListener('keydown', (event) => { if (event.key === 'Escape') document.getElementById('reader').hidden = true; });
-if (params.has('read')) document.getElementById('read').click();
+// Full view: the story across the whole window. Download: the whole story as the Meaning Model renders it, as Markdown.
+const readerPanel = document.getElementById('reader');
+function fullReader(on) { readerPanel.classList.toggle('full', on); setText('reader-full', on ? 'Side view' : 'Full view'); syncURL(); }
+document.getElementById('reader-full').addEventListener('click', () => fullReader(!readerPanel.classList.contains('full')));
+addEventListener('keydown', (event) => { if ((event.key === 'f' || event.key === 'F') && !readerPanel.hidden && !event.metaKey && !event.ctrlKey) fullReader(!readerPanel.classList.contains('full')); });
+document.getElementById('reader-download').addEventListener('click', () => {
+  const units = data.story?.units ?? []; const markdown = `${units.map((unit) => String(unit.text ?? '').trim()).filter(Boolean).join('\n\n')}\n`;
+  const slug = (text) => String(text ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f'’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const own = units.find((unit) => unit.role === 'document_root')?.text?.match(/^#\s+(.+)$/m)?.[1] ?? titleText; const story = document.getElementById('story');
+  const name = [slug(own), story.hidden ? null : slug(story.selectedOptions?.[0]?.textContent)].filter(Boolean).join('-') || 'story';
+  const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' })); link.download = `${name}.md`;
+  document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+});
+if (params.has('read')) { document.getElementById('read').click(); if (params.get('read') === 'full') fullReader(true); }
 
 const thoughtsButton = document.getElementById('thoughts');
 const showThoughts = (on) => { if (on) opt.show.add('notes'); else opt.show.delete('notes'); mind.visible = on; thoughtsButton.classList.toggle('on', on); thoughtsButton.textContent = on ? 'Hide thoughts' : 'Thoughts'; if (!on) tip.hidden = true; syncPanel(); syncURL(); dirty = true; };
@@ -1411,7 +1424,7 @@ function syncURL() {
     if (isEverything()) { next.set('everything', ''); next.delete('depth'); }
     else { if (show === without) next.set('nothoughts', ''); else if (show !== [...DEFAULT_SHOW].sort().join(',')) next.set('show', show); if (opt.lenses.size) next.set('lenses', opt.lenses.size === lensList.length ? 'all' : [...opt.lenses].join(',')); }
     if (!atEnd && !playing) next.set('at', opt.mode === 'construction' ? new Date(tau).toISOString() : now.toFixed(4)); else if (!atEnd && opt.mode === 'construction') next.set('at', new Date(tau).toISOString());
-    if (!document.getElementById('reader').hidden) next.set('read', ''); if (!qrPanel.hidden) next.set('qr', '');
+    if (!document.getElementById('reader').hidden) next.set('read', document.getElementById('reader').classList.contains('full') ? 'full' : ''); if (!qrPanel.hidden) next.set('qr', '');
     const query = next.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/\+/g, '%20').replace(/=(&|$)/g, '$1');
     history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}`);
   }, 400);

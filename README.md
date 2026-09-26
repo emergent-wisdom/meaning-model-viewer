@@ -22,7 +22,9 @@ anything in the view to read what it is, and click it to keep that open beside t
 - **Play.** *The story's years*, as history plays forward: the curtains draw on, and the events, decisions, readings
   and prose appear as their moments come. Or *the construction*: the model and the story graph as the agent built
   them, step by step, with the agent's own reasons as captions and the idle time between its calls shortened. Each
-  has play, pause, a scrubber and a speed, and **Read the story** shows the text as far as the play has come.
+  has play, pause, a scrubber and a speed, and **Read the story** shows the text as far as the play has come, beside
+  the view or in **Full view** across the window (`F`), with **Download .md** to save the whole story as the Meaning
+  Model renders it.
 - **Time.** From a single day to the model's deep past: *Story*, *A life* (press again for the next person's), *Centuries*
   and *World history*, or anywhere between (shift and scroll, or scroll when locked, zooms around the pointer). The
   axis is linear across a life and a log scale of years before the present at the scale of world history.
@@ -163,7 +165,7 @@ copied as it is. Each option is left out while it is as the stage showed it:
 | `everything` | every kind of record, every lens and the whole tree |
 
 The view also takes the stage's own: `&play` starts the play, `&still` stops the spin (the free camera), `&read` opens
-the story, `&qr` the QR codes, `&nothoughts` hides the thoughts, and `&capture` hands a recorder
+the story (`&read=full` across the window), `&qr` the QR codes, `&nothoughts` hides the thoughts, and `&capture` hands a recorder
 `window.__frame(t, dt)` to draw one frame at a time.
 
 The pages of earlier versions open the view with what they showed: `processes.html` as it is, `explorer.html` locked,
