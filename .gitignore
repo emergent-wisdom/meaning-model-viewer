@@ -8,3 +8,6 @@ renders/
 *.sqlite-shm
 *.sqlite-wal
 !media/*
+# Local agent worktrees and settings
+.claude/
+.DS_Store

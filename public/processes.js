@@ -167,7 +167,7 @@ principals.forEach((person) => {
 // Hidden until the Thoughts button shows them; hover any light to read it.
 const tip = document.getElementById('tip');
 const NOTE = { thought: ['Thought', '#c9d4ff', 0], author: ['Author record', '#ffd49a', 1], draw: ['Draw', '#ffffff', 2], world: ['World stage', '#b9aefc', 3], reference: ['Model reference', '#8fe3c9', 4], director: ['Director', '#ffb3c7', 2], review: ['Review', '#ffe08a', 1], passage: ['Prose', '#fff0d0', 5] };
-const hoverable = []; const notes = []; const mind = new THREE.Group(); mind.visible = !params.has('nothoughts'); scene.add(mind);
+const hoverable = []; const notes = []; const noteLinks = []; const mind = new THREE.Group(); mind.visible = !params.has('nothoughts'); scene.add(mind);
 {
   const graphNodes = data.graph.nodes.filter((n) => n.category !== 'root'); const place = new Map();
   const neighbours = new Map(); const moments = new Map();
@@ -182,6 +182,9 @@ const hoverable = []; const notes = []; const mind = new THREE.Group(); mind.vis
     if (place.has(node.id)) continue; const near = (neighbours.get(node.id) ?? []).map((id) => place.get(id)).filter(Boolean);
     if (near.length) place.set(node.id, back(node, near.reduce((sum, p) => sum + p.x, 0) / near.length + ((node.id.length % 7) - 3) * 0.9));
   }
+  const enters = new Map();
+  for (const node of graphNodes) { const ts = (moments.get(node.id) ?? []).map((e) => e.start).filter((t) => t >= T0 - 0.3 && t <= T1); if (ts.length) enters.set(node.id, Math.min(...ts)); }
+  for (let pass = 0; pass < 4; pass += 1) for (const node of graphNodes) { if (enters.has(node.id)) continue; const near = (neighbours.get(node.id) ?? []).map((id) => enters.get(id)).filter((t) => t !== undefined); if (near.length) enters.set(node.id, Math.min(...near)); }
   const rest = graphNodes.filter((node) => !place.has(node.id)).sort((a, b) => String(a.born?.at ?? '').localeCompare(String(b.born?.at ?? '')));
   rest.forEach((node, i) => place.set(node.id, back(node, -LENGTH / 2 + ((i + 0.5) / rest.length) * LENGTH)));
   const groupRows = (group) => rows.filter((row) => row.group === group);
@@ -195,7 +198,7 @@ const hoverable = []; const notes = []; const mind = new THREE.Group(); mind.vis
     const [kind, color] = NOTE[node.category] ?? ['Note', '#dddddd'];
     const light = spark(color, node.category === 'passage' ? 2.6 : 2.0); light.position.copy(place.get(node.id));
     light.userData = { hover: { kind, title: node.title, text: node.text, about: [...new Set((data.graph.edges.filter((e) => e.source === node.id && e.target.event).map((e) => byId.get(e.target.event)?.label).filter(Boolean)))] } };
-    mind.add(light); notes.push(light); hoverable.push(light);
+    light.userData.t = enters.get(node.id) ?? -Infinity; light.userData.id = node.id; mind.add(light); notes.push(light); hoverable.push(light);
     // Threads down to where the moments it is about meet the processes.
     light.userData.links = [];
     for (const event of (moments.get(node.id) ?? []).filter((e) => e.start >= T0 - 0.3 && e.start <= T1)) for (const point of meet(event)) {
@@ -206,7 +209,7 @@ const hoverable = []; const notes = []; const mind = new THREE.Group(); mind.vis
   for (const edge of data.graph.edges) {
     if (!edge.target.node) continue; const a = place.get(edge.source); const b = place.get(edge.target.node); if (!a || !b) continue;
     const key = [edge.source, edge.target.node].sort().join('|'); if (seen.has(key)) continue; seen.add(key);
-    mind.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), additive('#c9d4ff', 0.16)));
+    const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), additive('#c9d4ff', 0.16)); link.userData.ends = [edge.source, edge.target.node]; mind.add(link); noteLinks.push(link);
   }
 }
 
@@ -282,6 +285,8 @@ function apply() {
   for (const row of rows) { row.wall.geometry.setDrawRange(0, Math.max(0, (upto - 1) * 6)); row.crest.geometry.setDrawRange(0, upto); row.value.element.textContent = format(row, valueAt(row.measure.points, Math.min(now, T1))); }
   for (const thread of threads) { thread.visible = thread.userData.t <= now; if (thread.userData.tag) thread.userData.tag.visible = thread.visible; }
   for (const item of [...decisions, ...lenses, ...arcs]) item.visible = item.userData.t <= now;
+  const shown = new Set(); for (const light of notes) { light.visible = light.userData.t <= now; for (const line of light.userData.links ?? []) line.visible = light.visible; if (light.visible) shown.add(light.userData.id); }
+  for (const link of noteLinks) link.visible = link.userData.ends.every((id) => shown.has(id));
   sweep.position.x = xOf(now); sweep.visible = playing;
   document.getElementById('fill').style.width = `${((now - T0) / (T1 - T0)) * 100}%`;
   document.getElementById('clock').textContent = month(Math.min(now, T1 - 0.01));
@@ -345,5 +350,9 @@ function hover() {
   tip.style.left = `${Math.min(innerWidth - w - 12, pointerAt.x + 16)}px`; tip.style.top = `${Math.min(innerHeight - h - 12, Math.max(12, pointerAt.y + 16))}px`;
 }
 function frame() { controls.update(); composer.render(); labels.render(scene, camera); declutter(); hover(); requestAnimationFrame(frame); }
-frame();
-if (params.has('play')) setTimeout(play, 1000);
+// Capture: a recorder sets the moment and draws one frame at a time, so a video plays at an even speed.
+if (params.has('capture')) {
+  document.body.classList.add('capture');
+  window.__frame = (t, dt, sweeping = true) => { now = t; playing = sweeping; apply(); controls.update(dt); composer.render(); labels.render(scene, camera); declutter(); return [T0, T1]; };
+  window.__span = [T0, T1];
+} else { frame(); if (params.has('play')) setTimeout(play, 1000); }
