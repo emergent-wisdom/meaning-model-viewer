@@ -93,6 +93,7 @@
   @media (max-width: 1360px) { .hint { display: none; } }
   @media (max-width: 900px) { .repos, .eyebrow { display: none; } .bar .span { display: none; } }
   .panel.folded section:not(:first-child) { display: none; }
+  .keys-help { color: var(--muted); font-size: 11.5px; line-height: 1.5; } .keys-help b { color: var(--ink-2); font-weight: 600; }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }</script>
 </head>
@@ -107,6 +108,7 @@
   <section><h2>Depth of the tree</h2><div class="seg" id="depths"></div><div class="depth-note" id="depth-note"></div></section>
   <section><h2>Show <button id="all">All</button></h2><div id="kinds"></div></section>
   <section><h2>Lenses <button id="lenses-all">All</button></h2><div id="lenses"></div></section>
+  <section class="keys-help">Keys: <b>1</b>–<b>4</b> the scales · <b>L</b> layers · <b>T</b> together · <b>+</b> <b>−</b> zoom · arrows pan and scroll · <b>Alt</b>+<b>0</b>–<b>6</b> depth</section>
 </aside>
 <div class="hud hint" id="hint">Scroll or pinch to zoom in time · drag to pan · hover anything to read it</div>
 <div class="hud bar"><div class="seg" id="presets"><button data-preset="story">Story</button><button data-preset="life">A life</button><button data-preset="centuries">Centuries</button><button data-preset="world">World history</button></div>

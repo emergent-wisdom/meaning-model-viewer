@@ -224,6 +224,9 @@ const state = { mode: params.get('view') === 'together' ? 1 : 0, blend: 0, depth
 if (params.has('show')) state.show = new Set(params.get('show').split(',').filter(Boolean));
 if (params.has('lenses')) state.lenses = new Set(params.get('lenses') === 'all' ? lenses.map((lens) => lens.id) : params.get('lenses').split(',').filter(Boolean));
 state.blend = state.mode;
+// blend=0..1 holds the view between the two representations, for a capture of the morph.
+const frozenBlend = params.has('blend') ? Math.max(0, Math.min(1, Number(params.get('blend')) || 0)) : null;
+if (frozenBlend !== null) { state.blend = frozenBlend; state.mode = frozenBlend >= 0.5 ? 1 : 0; }
 let dirty = true; let relayout = true;
 
 // ---- layout: lanes for each representation --------------------------------------------------------------------------------------
@@ -316,7 +319,8 @@ function boxOf(mode) {
   if (mode === 0) { for (const floor of floors) { ys.push(floor.y, floor.y + (floor.amp || 1)); zs.push(floor.z0, floor.z1); } }
   else { ys.push(0, ampAt(1)); zs.push(0, rows.length ? rows.at(-1).z1 : 1); }
   if (!shown.length) { ys.push(0, 1); zs.push(0, 1); }
-  return { x0: -LENGTH / 2 - 16, x1: LENGTH / 2 + 2, y0: Math.min(...ys) - 1.5, y1: Math.max(...ys) + (state.show.has('notes') ? 9 : 2), z0: Math.min(...zs) - (state.show.has('notes') ? 6 : 0), z1: Math.max(...zs) + 5 };
+  const mind = (state.show.has('notes') ? 7.5 : 0) + (state.show.has('prose') ? 3.2 : 0);
+  return { x0: -LENGTH / 2 - 16, x1: LENGTH / 2 + 2, y0: Math.min(...ys) - 1.5, y1: Math.max(...ys) + 2 + mind, z0: Math.min(...zs) - (mind ? 7 : 0), z1: Math.max(...zs) + 5 };
 }
 function fitCamera() {
   const rect = freeRect(); camera.aspect = innerWidth / innerHeight;
@@ -365,7 +369,9 @@ function anchor(eventId, t) {
   const time = Math.max(node.t0, Math.min(node.t1, t ?? node.t0));
   return { x: X(time), y: p.y + (node.kind === 'sub' ? BAR * 1.6 : BAR) + 0.02, z: p.z, node, own: node.id === eventId };
 }
-const WHITE = color('#ffffff'); const DIM = color('#8a93a8'); const RIM = color('#101114');
+const WHITE = color('#ffffff'); const RIM = color('#101114');
+// Prose and the agent's notes float over the top of the tree (Layers) or behind the field (Together), prose lowest.
+const mindBase = (m) => ({ y: (1 - m) * ((floors[0]?.y ?? 0) + (floors[0]?.amp ?? 0)) + m * ampAt(1) + 1.6, z: (1 - m) * (floors[0]?.z0 ?? 0) - 1.6 });
 let hoverTargets = []; let lit = null; let litChain = new Set(); let profile = null; let drawCount = 0; let threadTops = [];
 const scratch = new THREE.Vector3();
 const screen = (x, y, z) => { const v = scratch.set(x, y, z).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, ok: v.z < 1 }; };
@@ -485,7 +491,7 @@ function draw() {
   }
   // The agent's notes: lights above and behind, threaded to the moments they are about.
   if (state.show.has('notes')) {
-    const top = Math.max(...floors.map((floor) => floor.y * (1 - m)), 0) + ROW * 1.5 + 3.5; const zBack = (1 - m) * (floors[0]?.z0 ?? 0) - 3;
+    const base = mindBase(m); const top = base.y + (state.show.has('prose') ? 3.2 : 1.2); const zBack = base.z - 1.4;
     const slots = new Map();
     for (const note of notes) {
       const x = X(note.t); if (x < left - 2 || x > right + 2) continue;
@@ -496,9 +502,9 @@ function draw() {
       hoverTargets.push({ kind: 'note', note, noteKind: kind, wpt: W(x, y, z) });
     }
   }
-  // Prose: each part of the story at the moments it tells, in front of everything.
+  // Prose: each part of the story over the moments it tells, threaded down to them.
   if (state.show.has('prose')) {
-    const front = (1 - m) * (floors.at(-1)?.z1 ?? 0) + m * (rows.at(-1)?.z1 ?? 0) + 2.6; const y = (1 - m) * (floors.at(-1)?.y ?? 0) + 0.2; const c = color('#fff0d0');
+    const base = mindBase(m); const front = base.z; const y = base.y; const c = color('#fff0d0');
     for (const unit of prose) {
       const x = X(unit.t); if (x < left - 1 || x > right + 1) continue; const on = lit?.unit === unit;
       chips.quad(x - 0.35, x + 0.35, y, y + 0.9, y, y + 0.9, front, c, on ? 0.9 : 0.55, on ? 0.9 : 0.55);
@@ -520,8 +526,8 @@ function tickMarks() {
   // A tick at a step shows only where its neighbours at that step are far enough apart to read, and nothing is near it.
   const legible = (t, before, after) => Math.min(Math.abs(X(t) - X(before)), Math.abs(X(after) - X(t))) * pxPer >= gap * 0.9;
   const tryAdd = (t, text, major, before, after) => { if (!(t >= F.a && t <= F.b)) return; const x = X(t); if (x < left || x > right || !room(x) || !legible(t, before, after)) return; taken.push(x); out.push({ t, x, text: typeof text === 'function' ? text() : text, major }); };
-  const ages = [300000, 200000, 100000, 50000, 20000, 10000, 5000];
-  ages.forEach((age, i) => tryAdd(PRESENT - age, () => `${grouped(age)} years ago`, true, PRESENT - (ages[i - 1] ?? age * 1.5), PRESENT - (ages[i + 1] ?? age / 2)));
+  const ages = [300000, 100000, 30000, 10000, 5000];
+  ages.forEach((age, i) => tryAdd(PRESENT - age, () => `${grouped(age)} years ago`, true, PRESENT - (ages[i - 1] ?? age * 3), PRESENT - (ages[i + 1] ?? age / 3)));
   for (const step of [1000, 500, 100, 50, 10, 5, 1]) {
     const from = Math.ceil(Math.max(F.a, PRESENT - 5000) / step) * step;
     for (let year = from; year <= F.b && out.length < 400; year += step) if (year !== 0) tryAdd(year, () => yearText(year), step >= 100 || year % 100 === 0, year - step, year + step);
@@ -586,7 +592,7 @@ const labels = (() => {
     }
     for (const thread of threadTops) if (thread.weight >= 2) wanted.push({ key: `thr:${thread.event.id}`, cls: 'event', html: esc(words(thread.event.name, 40)), p: [thread.x, thread.top.y + 0.5, thread.top.z], ax: 0.5, ay: 1, pri: 300 + thread.weight * 25 + (litChain.has(thread.event.id) ? 400 : 0) });
     if (state.show.has('prose')) {
-      const front = (1 - m) * (floors.at(-1)?.z1 ?? 0) + m * (rows.at(-1)?.z1 ?? 0) + 2.6; const y = (1 - m) * (floors.at(-1)?.y ?? 0) + 1.25;
+      const base = mindBase(m); const front = base.z; const y = base.y + 1.15;
       for (const unit of prose) { const x = X(unit.t); if (x >= left && x <= right) wanted.push({ key: `prose:${unit.id}`, cls: 'prose', html: esc(unit.title ?? ''), p: [x, y, front], ax: 0.5, ay: 1, pri: 800 }); }
     }
     // Place: highest priority first, each where it overlaps nothing already placed. The page is read first (panels and
@@ -634,7 +640,7 @@ const pointerTime = (clientX, clientY) => {
 };
 let animation = null;
 function setView(a, b) { F = frameOf(a, b); dirty = true; }
-function zoomAt(clientX, clientY, factor) { animation = null; const { u, t } = pointerTime(clientX, clientY); const [a, b] = windowAt(t, u, F.s / factor); setView(a, b); hideHint(); }
+function zoomAt(clientX, clientY, factor) { animation = null; clearPreset(); const { u, t } = pointerTime(clientX, clientY); const [a, b] = windowAt(t, u, F.s / factor); setView(a, b); hideHint(); }
 function animateTo(a, b, ms = 1400) {
   const from = [G(F.a), G(F.b)]; const to = [G(a), G(b)]; const t0 = performance.now();
   animation = (now) => { const k = smooth(Math.min(1, (now - t0) / ms)); const ga = from[0] + (to[0] - from[0]) * k; const gb = from[1] + (to[1] - from[1]) * k; setView(Ginv(ga), Math.min(PRESENT, Ginv(gb))); if (k >= 1) animation = null; };
@@ -649,14 +655,16 @@ const PRESETS = {
   centuries: () => [centuries - (PRESENT - centuries) * 0.04, PRESENT],
   world: () => [BOUNDS[0], BOUNDS[1]],
 };
+let currentPreset = null;
 function preset(name, animate = true) {
-  if (name === 'life' && animate && document.querySelector('#presets .on')?.dataset.preset === 'life') lifeTurn += 1;
+  if (name === 'life' && animate && currentPreset === 'life') lifeTurn += 1;
+  currentPreset = name;
   const [a, b] = PRESETS[name](); if (animate) animateTo(a, b); else setView(a, b);
   for (const button of document.querySelectorAll('#presets button')) button.classList.toggle('on', button.dataset.preset === name);
   const life = document.querySelector('#presets [data-preset="life"]'); if (lives.length) life.textContent = name === 'life' ? `${lives[lifeTurn % lives.length].name}'s life` : 'A life';
 }
 for (const button of document.querySelectorAll('#presets button')) button.addEventListener('click', () => preset(button.dataset.preset));
-const clearPreset = () => { for (const button of document.querySelectorAll('#presets button')) button.classList.remove('on'); document.querySelector('#presets [data-preset="life"]').textContent = 'A life'; };
+const clearPreset = () => { currentPreset = null; for (const button of document.querySelectorAll('#presets button')) button.classList.remove('on'); document.querySelector('#presets [data-preset="life"]').textContent = 'A life'; };
 
 const canvas = renderer.domElement; let drag = null; const touches = new Map();
 canvas.addEventListener('wheel', (event) => {
@@ -772,6 +780,13 @@ function showTip(target) {
   tip.style.left = `${Math.min(innerWidth - w - 12, pointer.x + 16)}px`; tip.style.top = `${Math.min(innerHeight - h - 12, Math.max(12, pointer.y + 16))}px`;
 }
 function click() { if (lit?.kind === 'prose') openReader(lit.unit.id); }
+// Double-click an Event or a process to zoom to it; elsewhere, to zoom in there.
+canvas.addEventListener('dblclick', (event) => {
+  const item = lit?.node ?? (lit?.event ? nodeById.get(lit.event.id) : null) ?? (lit?.decision ? nodeById.get(lit.decision.eventId) : null) ?? (lit?.reading ? nodeById.get(lit.reading.eventId) : null);
+  clearPreset(); hideHint();
+  if (!item) { zoomAt(event.clientX, event.clientY, 2.5); return; }
+  const span = Math.max(0.012, (item.t1 - item.t0) * 1.25); const [a, b] = windowAt((item.t0 + item.t1) / 2, 0.5, span); animateTo(a, b, 1100);
+});
 
 // ---- the panel -------------------------------------------------------------------------------------------------------------------------
 const depthNote = { 0: 'The world alone.', 1: 'The world and what it holds: long developments, lives, places and institutions.', 2: 'With the periods, change arcs and parts of each.', 3: 'With the phases of each change and the moments in them.', 4: 'With the moments within moments.', 5: 'Deeper still.', 6: 'The whole tree.' };
@@ -838,6 +853,7 @@ addEventListener('keydown', (event) => {
   const keys = { 1: 'story', 2: 'life', 3: 'centuries', 4: 'world' }; if (keys[event.key]) preset(keys[event.key]);
   if (event.key === 'l') { state.mode = 0; changed(false); } if (event.key === 't') { state.mode = 1; changed(false); }
   if (event.key === 'ArrowDown') scrollBy(120); if (event.key === 'ArrowUp') scrollBy(-120);
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { const [a, b] = windowAt(timeAt(F, 0.5), event.key === 'ArrowLeft' ? 0.65 : 0.35, F.s); animateTo(a, b, 350); clearPreset(); }
   if (event.key === '+' || event.key === '=') zoomAt(innerWidth / 2, innerHeight / 2, 1.6); if (event.key === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.6);
   if (/^[0-6]$/.test(event.key) && event.altKey) { state.depth = Math.min(MAX_DEPTH, Number(event.key)); changed(); }
 });
@@ -849,16 +865,35 @@ if (params.has('t0') && params.has('t1')) { setView(Math.max(BOUNDS[0], Number(p
 else if (params.has('focus') && byId.has(params.get('focus'))) { const event = byId.get(params.get('focus')); const span = Math.max(0.02, (event.reach[1] - event.reach[0]) * 1.6); const [a, b] = windowAt((event.reach[0] + event.reach[1]) / 2, 0.5, span); setView(a, b); }
 else { if (params.get('life')) lifeTurn = Math.max(0, lives.findIndex((life) => life.name.toLowerCase() === params.get('life').toLowerCase())); preset(params.get('zoom') ?? 'story', false); }
 if (params.has('read')) openReader();
+// The URL follows the view, so any view can be copied and captured; live reloads onto it when the data file changes.
+let urlTimer = null;
+function syncURL() {
+  clearTimeout(urlTimer);
+  urlTimer = setTimeout(() => {
+    const next = new URLSearchParams(); for (const key of ['data', 'title', 'live', 'still']) if (params.has(key)) next.set(key, params.get(key));
+    const digits = Math.max(0, Math.min(6, Math.ceil(-Math.log10(F.s)) + 3));
+    if (state.mode === 1) next.set('view', 'together');
+    if (currentPreset) { next.set('zoom', currentPreset); if (currentPreset === 'life' && lives.length) next.set('life', lives[lifeTurn % lives.length].name.toLowerCase()); }
+    else { next.set('t0', F.a.toFixed(digits)); next.set('t1', F.b.toFixed(digits)); }
+    next.set('depth', String(state.depth));
+    next.set('show', [...state.show].join(',')); if (state.lenses.size) next.set('lenses', state.lenses.size === lenses.length ? 'all' : [...state.lenses].join(','));
+    history.replaceState(null, '', `${location.pathname}?${next.toString().replace(/%2C/g, ',')}`);
+  }, 400);
+}
+if (params.has('live')) setInterval(async () => {
+  try { const next = await (await fetch(`data/${params.get('data') ?? 'rabbit-hole'}.json?ts=${Date.now()}`, { cache: 'no-store' })).json(); if (next.lastCall !== data.lastCall || next.generatedAt !== data.generatedAt) location.reload(); } catch { /* keep the last view */ }
+}, 20000);
 let last = performance.now(); let lastHover = 0; const drawTimes = [];
 // For captures and tests: the window on screen, the time under a point, and what each redraw costs.
 window.explorer = { view: () => ({ a: F.a, b: F.b, warp: F.w, mode: state.mode, depth: state.depth, scroll }), timeAt: (x, y) => pointerTime(x, y).t, drawTimes: () => [...drawTimes],
-  zoom: (x, y, factor) => zoomAt(x, y, factor), profile: () => profile, redraw: () => { const began = performance.now(); if (relayout) { relayout = false; computeLayout(); } placeCamera(); draw(); composer.render(); return performance.now() - began; } };
+  zoom: (x, y, factor) => zoomAt(x, y, factor), profile: () => profile, hover: () => hover(),
+  targets: (kind) => hoverTargets.filter((target) => target.kind === kind).slice(0, 40).map((target) => { const w = target.wpt ?? target.wseg?.[0] ?? target.wpts?.[Math.floor(target.wpts.length / 2)]; const p = screen(...w); return [Math.round(p.x), Math.round(p.y)]; }), redraw: () => { const began = performance.now(); if (relayout) { relayout = false; computeLayout(); } placeCamera(); draw(); composer.render(); syncURL(); return performance.now() - began; } };
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (animation) animation(now);
-  const target = state.mode; if (Math.abs(state.blend - target) > 0.001) { state.blend += Math.sign(target - state.blend) * Math.min(Math.abs(target - state.blend), dt / 0.9); dirty = true; } else state.blend = target;
+  const target = frozenBlend ?? state.mode; if (Math.abs(state.blend - target) > 0.001) { state.blend += Math.sign(target - state.blend) * Math.min(Math.abs(target - state.blend), dt / 0.9); dirty = true; } else state.blend = target;
   if (relayout) { relayout = false; computeLayout(); dirty = true; }
-  if (dirty) { dirty = false; const began = performance.now(); placeCamera(); draw(); drawTimes.push(performance.now() - began); if (drawTimes.length > 120) drawTimes.shift(); if (pointer) hoverDirty = true; }
+  if (dirty) { dirty = false; const began = performance.now(); placeCamera(); draw(); if (!animation) syncURL(); drawTimes.push(performance.now() - began); if (drawTimes.length > 120) drawTimes.shift(); if (pointer) hoverDirty = true; }
   if (hoverDirty && (!pointer || now - lastHover > (animation || drag?.moved ? 90 : 0))) { lastHover = now; hover(); }
   composer.render();
   requestAnimationFrame(frame);
