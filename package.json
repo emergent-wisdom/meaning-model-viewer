@@ -16,6 +16,7 @@
   "files": [
     "serve.mjs",
     "extract.mjs",
+    "construction-models.mjs",
     "measures.mjs",
     "public",
     "README.md",

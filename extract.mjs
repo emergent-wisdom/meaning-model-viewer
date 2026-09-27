@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { readPath } from './measures.mjs';
+import { constructionModelHistory } from './construction-models.mjs';
 import { placeStoryUnits } from './public/story-time.js';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -95,7 +96,7 @@ if (flag('--run')) {
   const loaded = JSON.parse(readFileSync(modelPath, 'utf8')); staticModel = loaded.model ?? loaded;
   const graphFile = JSON.parse(readFileSync(graphPath, 'utf8')); staticGraph = graphFile.narrative_graph ?? graphFile.narrativeGraph ?? graphFile;
   runName = staticModel.id;
-  history = { models: [{ modelHash: 'static', definition: staticModel }], revisions: [{ graphHash: 'static', definition: staticGraph }] };
+  history = { models: [{ modelHash: staticGraph.source?.model_hash ?? 'static', definition: staticModel }], revisions: [{ graphHash: 'static', definition: staticGraph }] };
 } else {
   throw new Error('Pass --run <folder> or --static <model.json> <graph.json>.');
 }
@@ -109,7 +110,7 @@ for (const entry of calls) {
 const firstCall = calls[0]?.at ?? null;
 
 // ---- time ----------------------------------------------------------------------------------------------------------
-const finalModelEntry = history.models.at(-1);
+const { finalModelEntry, modelHistory } = constructionModelHistory(history);
 const unit = String(finalModelEntry.definition.time_unit ?? 'year');
 // Everything the page draws is in decimal years; the model's own clock is kept beside it.
 const toYear = (t) => (t === null || t === undefined ? null : unit.startsWith('civil_day_since_1970') ? 1970 + t / 365.2425 : unit.startsWith('year') ? t : t);
@@ -118,7 +119,7 @@ const toYear = (t) => (t === null || t === undefined ? null : unit.startsWith('c
 const born = new Map(); // record key -> { rev, at }
 const modelSteps = [];
 let previous = { events: new Set(), cuts: new Set(), referents: new Set(), relations: new Set(), processes: new Set() };
-history.models.forEach((entry, rev) => {
+modelHistory.forEach((entry, rev) => {
   const mm = entry.definition.meaning_model ?? {};
   const now = {
     events: new Set((mm.events ?? []).map((item) => item.id)), cuts: new Set((mm.normalized_cuts ?? []).map((item) => item.id)),
@@ -162,8 +163,8 @@ history.revisions.forEach((revision, rev) => {
   graphSteps.push({ rev, graphHash: revision.graphHash, at, reason: String(reason).slice(0, 280), added: added.length, boundModel });
 });
 
-// The model the story graph is bound to at its head, else the newest one.
-const model = (history.models.find((entry) => entry.modelHash === boundModel) ?? finalModelEntry).definition;
+// The model explicitly bound to the final graph, selected independently of dependency order.
+const model = finalModelEntry.definition;
 const index = indexModel(model);
 const mm = model.meaning_model ?? {};
 const birthOf = (collection, id) => born.get(`${collection}:${id}`) ?? null;
@@ -483,7 +484,7 @@ const data = {
   window, extent, storyWindow, storyRoute, people, events, relations, draws, referents, processes, lenses,
   graph: { nodes: graphNodes, edges: graphEdges }, story, measures, steps, toolCalls,
   totals: { events: events.length, cuts: allCuts.length - withdrawn.size, people: people.length, lives: lives.length, thoughts: graphNodes.filter((node) => node.category === 'thought').length,
-    passages: graphNodes.filter((node) => node.category === 'passage').length, words: storyWords ?? graphNodes.reduce((sum, node) => sum + node.words, 0), modelRevisions: history.models.length, graphRevisions: history.revisions.length },
+    passages: graphNodes.filter((node) => node.category === 'passage').length, words: storyWords ?? graphNodes.reduce((sum, node) => sum + node.words, 0), modelRevisions: modelHistory.length, graphRevisions: history.revisions.length },
 };
 mkdirSync(dirname(resolve(out)), { recursive: true });
 writeFileSync(out, JSON.stringify(data));
