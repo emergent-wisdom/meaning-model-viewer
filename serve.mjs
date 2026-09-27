@@ -1,106 +1,134 @@
 #!/usr/bin/env node
-// The Meaning Model viewer: open runs in one view, at the server's root.
-//
-//   node serve.mjs --run <run folder> [--run <another> ...] [--live] [--port 8765]
-//   node serve.mjs --data <folder of data files>
-//
-// Each run is read with extract.mjs into a data file kept in memory; the run is never written to and its own server is
-// never called (the extractor takes an online backup of its engine state). After a --run, --name, --title, --config,
-// --log, --graph and --state apply to that run (see extract.mjs), and --label names it in the view's choice of runs.
-// --live reads every run again each minute, and a view opened with &live follows it. PORT, or --port, sets the port.
+// Serve saved runs and reviewed snapshots with the viewer bundled in the MCP.
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, extname, join, normalize, resolve } from 'node:path';
+import { basename, extname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { viewerDirectory } from './meaning-model.mjs';
 
-const here = import.meta.dirname;
-const root = join(here, 'public');
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const liveRevision = (data) => createHash('sha256').update(JSON.stringify([data.modelHash ?? null, data.headGraphHash ?? null, data.lastCall ?? null])).digest('hex');
+const legacyViews = { 'processes.html': 'together', 'landscape.html': 'terrain', 'explorer.html': 'graph' };
 
-// ---- what to serve: runs, and folders of data files -----------------------------------------------------------------------
-const argv = process.argv.slice(2);
-const global = { port: Number(process.env.PORT ?? 8765), live: false, data: [] };
-const runs = []; let current = null;
-const RUN_FLAGS = new Set(['--name', '--title', '--config', '--log', '--graph', '--state', '--scopes']);
-for (let i = 0; i < argv.length; i += 1) {
-  const arg = argv[i];
-  if (arg === '--run') { current = { folder: resolve(argv[i += 1]), flags: [] }; runs.push(current); }
-  else if (RUN_FLAGS.has(arg)) { if (!current) throw new Error(`${arg} belongs after the --run it is for.`); current.flags.push(arg, argv[i += 1]); }
-  else if (arg === '--label') { if (!current) throw new Error('--label belongs after the --run it is for.'); current.label = argv[i += 1]; }
-  else if (arg === '--live') global.live = true;
-  else if (arg === '--port') global.port = Number(argv[i += 1]);
-  else if (arg === '--data') global.data.push(resolve(argv[i += 1]));
-  else if (arg === '--help' || arg === '-h') { console.log(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).map((line) => line.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
-  else if (!arg.startsWith('--') && !runs.length) { current = { folder: resolve(arg), flags: [] }; runs.push(current); }
-  else throw new Error(`Unknown argument ${arg}: node serve.mjs --help`);
-}
-if (!global.data.length && !runs.length) for (const folder of [join(root, 'data'), join(here, 'data')]) if (existsSync(folder)) global.data.push(folder);
-
-// Data sets by name: each run's extraction, and every .json in the data folders.
-const sets = new Map();
-const scratch = mkdtempSync(join(tmpdir(), 'meaning-model-viewer-'));
-process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => process.exit(0));
-const extract = (run) => new Promise((done) => {
-  const out = join(scratch, `${run.key}.json`);
-  execFile(process.execPath, [join(here, 'extract.mjs'), '--run', run.folder, '--out', out, ...(run.flags.includes('--name') ? [] : ['--name', run.key]), ...run.flags],
-    { maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) { console.error(`${run.folder}: could not read the run.\n${String(stderr || error.message).trim().split('\n').slice(-6).join('\n')}`); done(false); return; }
-      const body = readFileSync(out); const data = JSON.parse(body);
-      const changed = sets.get(run.key)?.lastCall !== data.lastCall || sets.get(run.key)?.headGraphHash !== data.headGraphHash;
-      sets.set(run.key, { body, title: data.title, run: run.folder, generatedAt: data.generatedAt, lastCall: data.lastCall, headGraphHash: data.headGraphHash, events: data.events?.length ?? 0 });
-      if (changed) console.log(`${run.key}: ${String(stdout).trim().split('\n').at(-1).replace(out, 'read')}`);
-      done(true);
-    });
-});
-const keys = new Set();
-for (const run of runs) {
-  const named = run.flags[run.flags.indexOf('--name') + 1];
-  let key = (run.flags.includes('--name') ? named : basename(run.folder)).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'run';
-  if (/^(work|novel|run|story|state)$/.test(key)) key = `${basename(resolve(run.folder, '..')).toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}-${key}`;
-  for (let n = 2; keys.has(key); n += 1) key = `${key.replace(/-\d+$/, '')}-${n}`;
-  keys.add(key); run.key = key;
-}
-const loadFolders = () => { for (const folder of global.data) for (const file of readdirSync(folder).filter((name) => name.endsWith('.json') && name !== 'index.json')) {
-  const key = file.replace(/\.json$/, ''); if (sets.has(key) && sets.get(key).run) continue;
-  try { const body = readFileSync(join(folder, file)); const data = JSON.parse(body); if (!data.events) continue; sets.set(key, { body, title: data.title, run: null, generatedAt: data.generatedAt, lastCall: data.lastCall, events: data.events.length }); } catch { /* not a data file */ }
-} };
-loadFolders();
-if (runs.length) console.log(`Reading ${runs.length === 1 ? 'the run' : `${runs.length} runs`} with the Meaning Model${process.env.MEANING_MODEL_DIR ? ' in MEANING_MODEL_DIR' : ''}…`);
-const results = await Promise.all(runs.map(extract));
-if (runs.length && !results.some(Boolean)) { console.error('No run could be read.'); process.exit(1); }
-if (global.live && runs.length) setInterval(() => { for (const run of runs) extract(run); }, 60000).unref?.();
-// The runs the view can choose between, each by its label (else its title, told apart by its name when titles repeat).
-const index = () => {
-  const list = [...sets].map(([name, set]) => ({ name, title: set.title, label: runs.find((run) => run.key === name)?.label ?? null, generatedAt: set.generatedAt, lastCall: set.lastCall, events: set.events, live: Boolean(set.run && global.live) }));
-  for (const item of list) if (!item.label) item.label = list.filter((other) => other.title === item.title).length > 1 ? `${item.title ?? item.name} (${item.name})` : item.title ?? item.name;
-  return JSON.stringify({ default: runs.find((run) => sets.has(run.key))?.key ?? list[0]?.name ?? null, runs: list });
-};
-
-// QR codes for the links a view shows, when the qrcode package is installed.
-const qrcode = await import('qrcode').then((module) => module.default ?? module).catch(() => null);
-
-// ---- the server -------------------------------------------------------------------------------------------------------------------
-createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  const send = (status, body, type = 'text/plain; charset=utf-8') => { res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' }); res.end(body); };
-  if (url.pathname === '/data/index.json') return send(200, index(), types['.json']);
-  const set = url.pathname.match(/^\/data\/([^/]+)\.json$/);
-  if (set) return sets.has(decodeURIComponent(set[1])) ? send(200, sets.get(decodeURIComponent(set[1])).body, types['.json']) : send(404, 'no such data set');
-  if (url.pathname === '/qr.svg') {
-    const target = url.searchParams.get('url') ?? '';
-    if (!qrcode || !/^https?:\/\/[^\s]{1,300}$/.test(target)) return send(404, 'no QR code');
-    return send(200, await qrcode.toString(target, { type: 'svg', errorCorrectionLevel: 'M', margin: 2, color: { dark: '#000000', light: '#ffffff' } }), types['.svg']);
-  }
-  const path = normalize(decodeURIComponent(url.pathname)).replace(/^([/\\])+/, '');
-  const file = path || 'index.html';
-  if (file.split(/[/\\]/).includes('..')) return send(403, 'forbidden');
-  try { send(200, await readFile(join(root, file)), types[extname(file)] ?? 'application/octet-stream'); }
-  catch { send(404, 'not found'); }
-}).on('error', (error) => { console.error(error.code === 'EADDRINUSE' ? `Port ${global.port} is in use: pass --port <another> or set PORT.` : error.message); process.exit(1); })
-  .listen(global.port, '127.0.0.1', () => {
-    const base = `http://localhost:${global.port}`;
-    console.log(`\n${base}/  ${sets.size ? [...sets.keys()].join(', ') : 'no data yet: pass --run <run folder>'}`);
+export function createViewerServer(sets, { publicDirectory = viewerDirectory(), live = false } = {}) {
+  const root = resolve(publicDirectory);
+  if (!sets.size) throw new Error('No models to open. Pass --run <folder> or --data <folder>.');
+  const entries = [...sets].map(([name, data]) => {
+    if (!data.inspection?.model) throw new Error(`${name}: this snapshot predates the shared viewer. Extract it again from its saved run.`);
+    return { name, get data() { return live ? sets.get(name) : data; }, token: createHash('sha256').update(`${name}:${live ? 'live' : data.headGraphHash ?? data.modelHash ?? JSON.stringify(data)}`).digest('hex').slice(0, 48) };
   });
+  const byToken = new Map(entries.map((entry) => [entry.token, entry]));
+  const server = createServer(async (req, res) => {
+    const send = (status, body = '', type = 'text/plain; charset=utf-8', headers = {}) => {
+      res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers });
+      res.end(req.method === 'HEAD' ? undefined : body);
+    };
+    try {
+      const port = server.address()?.port;
+      const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+      if (!hosts.has(req.headers.host) || (req.headers.origin && !hosts.has(new URL(req.headers.origin).host))) return send(403, 'Forbidden');
+      if (!['GET', 'HEAD'].includes(req.method)) return send(405, 'Read-only viewer');
+      const url = new URL(req.url, 'http://localhost');
+      const path = decodeURIComponent(url.pathname);
+      const oldPage = path.replace(/^\//, '');
+      if (path === '/' || path === '/index.html' || Object.hasOwn(legacyViews, oldPage)) {
+        const selected = entries.find((entry) => entry.name === url.searchParams.get('data')) ?? entries[0];
+        url.searchParams.delete('data');
+        url.searchParams.delete('live');
+        if (legacyViews[oldPage] && !url.searchParams.has('view')) url.searchParams.set('view', legacyViews[oldPage]);
+        return send(302, '', undefined, { location: `/${selected.token}/${url.search}` });
+      }
+      const [, token, ...parts] = path.split('/');
+      const entry = byToken.get(token);
+      if (!entry) return send(404, 'Model snapshot not found');
+      const relative = parts.join('/') || 'index.html';
+      if (relative === 'data/index.json') return send(200, JSON.stringify({ default: 'model', runs: [{ name: 'model', title: entry.data.title, label: entry.data.title }] }), types['.json']);
+      if (live && relative === 'data/live.json') return send(200, JSON.stringify({ revision: liveRevision(entry.data) }), types['.json']);
+      if (live && relative === 'live-reload.js') return send(200, await readFile(new URL('./live-reload.js', import.meta.url)), types['.js']);
+      if (relative === 'data/model.json') return send(200, JSON.stringify(entry.data), types['.json']);
+      if (relative === 'data/views.json') return send(200, JSON.stringify(entries.map((item) => ({
+        url: `/${item.token}/`, title: item.data.title ?? item.name,
+        modelHash: item.data.modelHash, graphHash: item.data.headGraphHash,
+        selected: item === entry,
+      }))), types['.json']);
+      const file = resolve(root, relative), type = types[extname(file)];
+      if (!file.startsWith(`${root}${sep}`) || !type) return send(404, 'Not found');
+      let body = await readFile(file);
+      if (live && relative === 'index.html') body = body.toString('utf8').replace('<head>', `<head>\n<script src="live-reload.js" data-revision="${liveRevision(entry.data)}"></script>`);
+      return send(200, body, type);
+    } catch (error) {
+      if (error instanceof URIError) return send(400, 'Invalid path');
+      return send(404, 'Not found');
+    }
+  });
+  return server;
+}
+
+export async function main(argv = process.argv.slice(2)) {
+  const options = { port: Number(process.env.PORT ?? 8765), folders: [], live: false }, runs = [];
+  let current;
+  const runFlags = new Set(['--name', '--title', '--config', '--log', '--graph', '--state', '--scopes']);
+  const next = (index, option) => { const value = argv[index + 1]; if (!value || value.startsWith('--')) throw new Error(`${option} needs a value`); return value; };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--run') { current = { folder: resolve(next(i++, arg)), flags: [] }; runs.push(current); }
+    else if (arg === '--data') options.folders.push(resolve(next(i++, arg)));
+    else if (arg === '--port') options.port = Number(next(i++, arg));
+    else if (arg === '--live') options.live = true;
+    else if (runFlags.has(arg) || arg === '--label') {
+      if (!current) throw new Error(`${arg} belongs after --run`);
+      const value = next(i++, arg); if (arg === '--label') current.label = value; else current.flags.push(arg, value);
+    } else if (arg === '--help' || arg === '-h') {
+      console.log('meaning-model-viewer --run <folder> [--run <another>] [--live] [--port 8765]\nmeaning-model-viewer --data <folder of reviewed snapshot JSON>\nRun options: --name, --title, --label, --config, --log, --graph, --state, --scopes.');
+      return;
+    } else throw new Error(`Unknown option ${arg}`);
+  }
+  if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Invalid port');
+  const sets = new Map(), keys = new Set();
+  for (const folder of options.folders) for (const file of readdirSync(folder).filter((name) => name.endsWith('.json') && name !== 'index.json')) {
+    const data = JSON.parse(readFileSync(join(folder, file), 'utf8'));
+    sets.set(file.slice(0, -5), data);
+  }
+  const scratch = mkdtempSync(join(tmpdir(), 'meaning-model-viewer-'));
+  const clean = () => rmSync(scratch, { recursive: true, force: true });
+  process.on('exit', clean);
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => process.exit(0));
+  const extract = async (run) => {
+    const out = join(scratch, `${run.key}.json`);
+    await promisify(execFile)(process.execPath, [fileURLToPath(new URL('./extract.mjs', import.meta.url)), '--run', run.folder, '--out', out, ...run.flags], { maxBuffer: 64 * 1024 * 1024 });
+    const data = JSON.parse(readFileSync(out, 'utf8')); if (run.label) data.title = run.label;
+    sets.set(run.key, data);
+  };
+  try {
+    for (const run of runs) {
+      const named = run.flags.indexOf('--name');
+      const base = (named >= 0 ? run.flags[named + 1] : basename(run.folder)).replace(/[^a-zA-Z0-9._-]/g, '-');
+      let key = base, n = 2; while (keys.has(key) || sets.has(key)) key = `${base}-${n++}`;
+      keys.add(key); run.key = key; await extract(run);
+    }
+    const server = createViewerServer(sets, { live: options.live });
+    if (options.live && runs.length) {
+      let updating = false;
+      const timer = setInterval(async () => {
+        if (updating) return; updating = true;
+        try { for (const run of runs) await extract(run); }
+        catch (error) { console.error(`Keeping the last available view: ${error.message}`); }
+        finally { updating = false; }
+      }, 60_000);
+      timer.unref(); server.once('close', () => clearInterval(timer));
+    }
+    await new Promise((done, fail) => { server.once('error', fail); server.listen(options.port, '127.0.0.1', done); });
+    console.log(`http://localhost:${server.address().port}/`);
+    console.log(`Shared Meaning Model viewer · ${[...sets.keys()].join(', ')}`);
+    return server;
+  } catch (error) { clean(); throw error; }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => { console.error(error.message); process.exitCode = 1; });
+}

@@ -1,217 +1,71 @@
 # Meaning Model Viewer
 
-Open a [Meaning Model](https://github.com/emergent-wisdom/meaning-model) run and see what the agent built: the world,
-the lives in it and how they change, modeled as events and processes over time. One command reads a run folder and
-serves it in one view, at the server's root.
+Open saved [Meaning Model](https://github.com/emergent-wisdom/meaning-model) runs in the **same browser viewer included with Meaning Model MCP 0.5.0**. This repository supplies a command-line launcher and run reader. The MCP package owns the interface and its model interpretation; there is no separate copy to fall behind.
 
-The view opens as the processes view showed *Twelve Words* on stage: every named process the agent modeled as a
-curtain of light on its own scale over the story's years, the events that move them as threads through every process
-they touch, the decisions the model drew, the love-or-fear split behind the acts, the causal links between events, and
-the agent's thoughts behind them, slowly turning. Press play to sweep through the years. A small toolbar on the view
-chooses how to show it, as in the understanding graph: click a control and its choices appear below it. Point at
-anything in the view to read what it is, and click it to keep that open beside the view. The URL keeps every choice:
+For normal modeling, install the MCP in your AI app and ask **“Open this model.”** The assistant returns a local browser link. You do not need this repository. Ask **“Open these models together”** to switch between selected models in one viewer.
 
-- **Story.** When the viewer has more than one run open, which one to show, from a dropdown. It opens on the run an
-  agent worked on last.
-- **Camera.** *Spinning*, as it always turned; *Free*, to turn it (drag), move it (right-drag), come closer to what
-  is under the pointer (scroll) and walk through it with the keys yourself; or *Locked*, a steady framing from the front in which scrolling or pinching zooms in time and
-  dragging pans, and a view taller than the window moves up and down (shift and scroll, or the arrow keys).
-- **Shining** or **Less shining**: the full glare of the stage, or a quieter look without the haze.
-- **Edges**: the lines that link one thing to another (the thoughts' threads to their moments, the links between
-  documents, the causal links, the tree's connectors), shown or hidden when they distract; a document pointed at still
-  shows its own.
-- **Show everything**: every kind of record, every lens and the whole tree at once; pressed again, the view as the
-  stage showed it.
-- **Play.** *The story's years*, as history plays forward: the curtains draw on, and the events, decisions, readings
-  and prose appear as their moments come. Or *the construction*: the model and the story graph as the agent built
-  them, step by step, with the agent's own reasons as captions and the idle time between its calls shortened. Each
-  has play, pause, a scrubber and a speed, and **Read the story** shows the text as far as the play has come, beside
-  the view or in **Full view** across the window (`F`), with **Download .md** to save the whole story as the Meaning
-  Model renders it.
-- **Time.** From a single day to the model's deep past: *Story*, *A life* (press again for the next person's), *Centuries*
-  and *World history*, or anywhere between (shift and scroll, or scroll when locked, zooms around the pointer). The
-  axis is linear across a life and a log scale of years before the present at the scale of world history.
-- **Show it as.** *Processes* lays every process in one field, as the stage showed it. *Tree* stacks the model's tree
-  level by level, each level a floor below and in front of the one that holds it: the world, its long developments,
-  places and institutions and each person's life, their periods and change arcs, the phases of each change and the
-  moments within them, with every process at the level of what holds it. *Terrain* shows every function of the model
-  as one terrain, as the landscape showed it: each life with its periods as plateaus and its shocks as peaks, the
-  processes it runs through, what each person wants, feels and expects, and the world's long developments behind them,
-  with Events as beams, decisions as diamonds and the agent's notes and prose above. On the terrain, Details adds or
-  takes away the named processes (as ridges of their own), the events, the decisions, the causal links and the
-  thoughts.
-- **Depth** sets how far down the tree the view goes, and **Show** adds or takes away each kind of record: the named
-  processes, the events that move them, decisions, love or fear, causal links, the agent's thoughts, the tree of
-  Events, the subsidiary processes (each life's slow processes, the change arcs and their phases), and the prose part
-  by part. **Lenses** shows each lens's readings over the records they read, with whose reading each is. These are
-  under **Details**. The causal links run as arcs between the events they link: point at one to read which event
-  causes, enables or constrains which, and why.
+The tools include no story datasets and do not download them automatically. The public [Twelve Words and Book of Conditions examples](https://github.com/emergent-wisdom/story) are separate, optional downloads. Use `--data <folder>` to open downloaded viewer snapshots.
 
-**The story's own time.** Below the view, a strip holds the story's parts in reading order, each as long as its words,
-and lights the part the play is in (in the construction, the part the agent was writing); the caption names it. Point
-at a part to see its linked Events, and click it to visit its first linked moment and read it. World time comes from
-the passage's declared `renders` links in the story graph. A flashback can go backwards in world time without moving
-in reading order, and several parts can depict the same Event. Parts without dated links stay readable in the strip
-and say that their world time is unlinked or undated. A depiction link does not mean every fact in that Event has been
-revealed to the reader.
+## Open an existing run
 
-**Numbers.** Pointing at a curtain gives its displayed value and unit, alongside the source wording. These paths are
-parsed from the model's prose support: values between samples are interpolated, values beyond the samples are held,
-and a stated range is drawn at its midpoint. The tooltip identifies those estimates and any inferred dates. An event
-gives the displayed value of each process it moves; on the terrain, a ridge gives its number. Clicking keeps it open
-beside the view.
-
-Keys: `W` `A` `S` `D` walk through the view, `Q` and `E` go down and up, the arrows look around and `Shift` goes faster
-(the first step stops the spin; locked, `A` and `D` move through time and `W` and `S` zoom it); `1`–`4` the scales,
-`T` processes, `L` tree, `R` terrain, `Space` play, `C` the camera, `G` shining, `K` edges, `X` everything.
-
-The view was made for [*Twelve Words*](https://github.com/emergent-wisdom/story), the novel an agent wrote live
-with the Meaning Model at the Stockholm Claude Community event of 25 September 2026. That repo holds its run, the book
-and a video of the processes view.
-
-## Open a run
-
-It needs Node.js 22.18 or later.
+Requires Node.js 22.18 or later.
 
 ```sh
-git clone https://github.com/emergent-wisdom/meaning-model-viewer && cd meaning-model-viewer
+git clone https://github.com/emergent-wisdom/meaning-model-viewer
+cd meaning-model-viewer
 npm install
 npx meaning-model-mcp --install-engine
-node serve.mjs --run <run folder>
-```
-
-Then open http://localhost:8765: the run opens in the view. The second line installs the published Meaning Model, which the viewer uses to read a
-run; the third fetches its engine for your platform, once. To see *Twelve Words*:
-
-```sh
-git clone https://github.com/emergent-wisdom/story ../story
 node serve.mjs --run ../story/runs/rabbit-hole
 ```
 
-The title comes from the run's `viewer.json`, else from its own story. A run is read once at the start; `--live` reads
-it again every minute while an agent is still working, and the view opened with `&live` follows it. `--run` can be
-given several times, and the view's story dropdown then chooses between the runs; `--port` (or `PORT`) sets the port. After a
-`--run`, these apply to that run:
+Open the local URL printed by the command (port 8765 by default). Several `--run` arguments open several models in the Model selector. Set `--port` or `PORT` to change the port.
 
-| Flag | What it does |
+The run reader makes an online backup of the run's SQLite database, opens that temporary copy, and calls the MCP's construction exporter and renderer. It does not write into the run or start another writer on its database. The temporary backup is removed afterwards.
+
+To use an unpublished checkout, set `MEANING_MODEL_DIR` to the Meaning Model repository root; optionally set `LIFE_SIM_ENGINE_BIN` to its built engine. The selected MCP supplies both the snapshot builder and browser assets.
+
+### Run options
+
+Options following a `--run` apply to that run:
+
+| Option | Meaning |
 | --- | --- |
-| `--name <name>` | The name the view uses for it in `?data=` (by default the folder's name). |
-| `--label <text>` | What the view's choice of runs calls it (by default its title). |
-| `--title <title>` | A title of your own instead of the story's. |
-| `--config <viewer.json>` | How to show it, when the run folder has no `viewer.json` of its own (see below). |
-| `--log <file.jsonl>` | An earlier call log that comes first, such as the log of the run a fork was made from, so the construction replay reaches back to it. |
-| `--graph <hash>` | The story graph to read, instead of the newest one the log names. |
-| `--state <file.sqlite>` | The engine state, when the run folder holds more than one SQLite file. |
+| `--name <name>` | Stable name for the run. |
+| `--label <text>` | Label in the Model chooser. |
+| `--title <text>` | Override the title. |
+| `--config <viewer.json>` | Existing run display configuration. |
+| `--log <file.jsonl>` | Earlier call log, before the run's own log. |
+| `--graph <hash>` | Exact graph revision, overriding the most recent logged write. |
+| `--state <file.sqlite>` | Explicit database when a run contains several. |
+| `--scopes <a,b>` | Additional scopes needed to export the complete run. This does not filter private records. |
 
-The viewer never writes into a run and never calls the run's own server: it reads the call log and an online backup of
-the engine state, which is safe while the agent works. A run made with a Meaning Model newer than the published
-package is read with that version: set `MEANING_MODEL_DIR` to its checkout (and `LIFE_SIM_ENGINE_BIN` to its engine
-if it is not in `rust-engine/target/release`).
+A run follows `meaning-model-run/1`: `mcp-transcript.jsonl` and its engine database sit in the run directory or `novel/`, with optional `inputs/` and `viewer.json`. The command log establishes construction timestamps. Missing timestamps stay unknown.
 
-`node extract.mjs --run <run folder> --out <file.json>` makes the view's data file for a run on its own, and
-`node serve.mjs --data <folder>` serves a folder of such files.
+## Explore the model
 
-The export includes the author's construction history, notes and readings. By default the extractor uses all scopes
-found in the run. `--scopes` adds scopes; it does not filter the export for publication. Review a data file before
-sharing it. Source releases of this viewer contain no book or run data.
+**Show it as** switches Processes (together or layers), Tree, Terrain, Graph, Structure and Space in one page. **Coarse view** gives an overview; more detail reveals subprocesses. Space uses declared positions and reference frames. Graph layout is not physical geography. **Recenter** or Home fits the active representation.
 
-For a static website, publish `public/` together with the selected exports at `data/<name>.json` and a
-`data/index.json` such as `{"default":"story","runs":[{"name":"story","label":"Twelve Words"}]}`.
-The QR images need the local server's `/qr.svg` endpoint and are hidden when it is unavailable.
+The controls, full-document reader, document positions and numerical inspector are the MCP's current implementation. Passage placement follows declared Event links. Graph and Structure retain the native records; Space distinguishes declared positions from qualitative settings. Nothing is placed geographically from word matching.
 
-## The run format: `meaning-model-run/1`
+By default, each link identifies an immutable snapshot. Reopen after model changes to see the new revision. For existing run workflows, `--live` checks the run once a minute. The browser then reloads the current representation when a new revision is available, preserving its URL state and waiting for playback to pause. Live following stays enabled across model switches, including Graph, Structure and Space. This explicit live mode differs from the MCP's immutable snapshot links. Failed refreshes retain the last available view. All links stop working when this launcher stops.
 
-A run folder is what the Meaning Model's relay leaves while an agent works:
+Old `/processes.html`, `/landscape.html` and `/explorer.html` links redirect to Processes, Terrain and Graph in the current interface, preserving their query options and selected dataset. This keeps event QR links useful without maintaining old interfaces.
 
-- `mcp-transcript.jsonl`, the relay's call log: one JSON object per line. The viewer reads the entries with
-  `command.op` `"call"` and `event` `"result"`, each with `at` (an ISO time), `command.name` (the tool) and `result`
-  (the tool's result, `content[0].text` holding its JSON). The newest story graph a write produced is the one shown,
-  and each revision's time is the first logged call whose result names its hash.
-- The engine's SQLite state: `engine-state.sqlite`, else `story-state.sqlite`, else the folder's only `.sqlite` file
-  (or `--state`).
-- `inputs/*.json`, the calls' arguments, if kept: the viewer takes the access scopes the agent wrote under from them
-  and from the results.
-- `viewer.json`, if the run says how it wants to be shown.
+## Export or view snapshot files
 
-These can sit in the folder itself or in its `novel/` folder.
-
-## How a run can ask to be shown: `viewer.json`
-
-```json
-{
-  "schema": "meaning-model-viewer-display/1",
-  "title": "The Rabbit Hole",
-  "from": 2019.4,
-  "names": { "kieran.sharehouse_belonging": "belonging to the Sharehouse" },
-  "order": ["kieran.sharehouse_belonging"],
-  "links": [{ "label": "The story", "url": "https://github.com/emergent-wisdom/story" }]
-}
+```sh
+node extract.mjs --run ../story/runs/rabbit-hole --out .local-work/rabbit-hole.json
+node serve.mjs --data .local-work
 ```
 
-`title` is the title the view shows (else the story's own), `from` the year the story's years begin on screen (else a
-little before the story's first moment), `names` gives the processes names of their own (the view otherwise uses a
-process's id as words), `order` sets the order of the processes' rows, and `links` adds links to the ones the view
-always shows (this viewer and the Meaning Model). The QR code button shows the same links as codes.
+`--data` opens JSON snapshots prepared by this version's shared MCP builder. Older viewer JSON lacks native model records: regenerate it from its run rather than displaying incomplete Graph or Space views. A static model and graph can also be read with `--static <model.json> <graph.json>`; pass `--render <render.json>` for its exact MCP document render.
 
-## What the view reads from the model
+Exports are complete author views, including model definitions, notes and construction information. They are **not public reader projections**. The default output is `.local-work/run.json`, ignored in this repository. `--scopes` grants export access; it is not a publication filter. Review public snapshots explicitly and keep private databases, logs, intermediate revisions and conversations out of websites and releases. This package contains no story datasets.
 
-- **Whose each record is.** Every Event is governed by the nearest declared context root above it, found through
-  containment: the accepted world, a person's inner process, or a holder's understanding
-  (`meaning_model.context_roots`). A model that declares none is all world. Inner Events are drawn as that person's
-  own, with dashed lines and italic names, never with the world's authority.
-- **Lens readings.** Since the Meaning Model placed readings beneath their holders, a reading is an Event under its
-  holder's root (`reading.<lens>.<record>` under an understanding root, or `inner.<lens>.<record>` for an actor's own
-  reasons) that is `about` the record it reads. The view shows it as that holder's reading of the record, with
-  its question, unit, every answer with the remainder, and its provenance; readings are never merged across holders.
-  Runs made with Meaning Model 0.3.0 keep their readings on the records they read, and the view shows those too.
-- **The story's text** as the Meaning Model renders it from the story graph (`life_narrative_render`), and its title
-  from the story's own document.
+## Development and releases
 
-## The data file: `meaning-model-viewer/2`
+Run `npm test` after installing Meaning Model MCP 0.5.0, or set `MEANING_MODEL_DIR` to its checkout. Tests exercise shared data interpretation, exact asset serving, grouped model links, old URLs and read-only serving.
 
-`extract.mjs` turns a run into one JSON file, which is what the view reads: the people with their lives, periods,
-change arcs, decisions and the series of what they want and feel; every Event with its depth, role, owner, context and
-time in the tree; every process with its home, its parent and its authored path; the lenses and their readings; the
-causal relations; the story graph's notes and edges; the rendered story, each part placed among the moments it tells;
-and the construction's steps, times and tool calls. `schema`, `runFormat` and `meaningModel` say what made it.
+This project is distributed through GitHub. Version 0.5.0 switches the launcher and extractor to the bundled MCP viewer, including Graph, Structure and Space. Earlier versions remain available in Git history. UI fixes belong in `meaning-model/mcp-server/viewer/` so MCP users and standalone users receive the same changes.
 
-## Links into a view
-
-The view takes `?data=<name>` (by default the first run) and `&title=`. Its URL follows what it shows, so a view can be
-copied as it is. Each option is left out while it is as the stage showed it:
-
-| Option | Values |
-| --- | --- |
-| `camera` | `spin` (the default), `free` or `locked`; `pose=x,y,z,tx,ty,tz` keeps a free camera's place |
-| `glare` | `full` (shining, the default) or `soft` (less shining); `edges=off` hides the lines that link things |
-| `mode` | `story` (the default) or `construction`; `speed=0.25`, `0.5`, `1`, `2` or `4`; `at=` the play's position, a year or an ISO time |
-| `zoom` | `story` (the default), `life` (with `life=<first name>`), `centuries` or `world`; or `t0=` and `t1=` in years, or `focus=<event id>` |
-| `view` | `together` (the processes, the default), `layers` (the tree) or `terrain`; `depth=` 0 to 6 (2 by default) |
-| `show` | any of `processes,threads,decisions,lovefear,causal,notes,events,subsidiary,prose` (the first six by default) |
-| `lenses` | `all` or lens ids |
-| `everything` | every kind of record, every lens and the whole tree |
-
-The view also takes the stage's own: `&play` starts the play, `&still` stops the spin (the free camera), `&read` opens
-the story (`&read=full` across the window), `&qr` the QR codes, `&nothoughts` hides the thoughts, and `&capture` hands a recorder
-`window.__frame(t, dt)` to draw one frame at a time.
-
-The pages of earlier versions open the view with what they showed: `processes.html` as it is, `explorer.html` locked,
-as the tree with the named processes and less shining, and `landscape.html` as the terrain
-across all the model's years, playing the construction (with its `&play`, `&read`, `&live`, and `&still` as the free
-camera).
-
-## Versions
-
-- **0.3.1** places passages by their declared Event links, preserves flashbacks, leaves unlinked world time unknown,
-  and labels parsed, interpolated and held display values with their source wording.
-- **0.3.0** is one view, at the viewer's root: the processes view as the stage showed it, with the run, every camera,
-  shining or less, both plays, the explorer's scales, tree, depth and records, and the landscape's terrain in a small
-  toolbar on the view, and anything in it can be clicked to read what it is. The explorer's and the landscape's pages
-  open it with their options.
-- **0.2.0** opens any run with one command, and reads lens readings placed beneath their holders.
-- **0.1.0** is the landscape and the processes view as the story repo shows *Twelve Words* (The Rabbit Hole), pinned
-  there as a copy.
-
-## License
-
-MIT, in [LICENSE](LICENSE). three.js is vendored in `public/vendor/three` under its own MIT license.
+Code is MIT; see [LICENSE](LICENSE). Third-party viewer notices ship with the MCP package.
