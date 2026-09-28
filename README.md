@@ -1,8 +1,8 @@
 # Meaning Model Viewer
 
-Open saved [Meaning Model](https://github.com/emergent-wisdom/meaning-model) runs in the **same browser viewer included with Meaning Model MCP 0.5.0**. This repository supplies a command-line launcher and run reader. The MCP package owns the interface and its model interpretation; there is no separate copy to fall behind.
+Open saved [Meaning Model](https://github.com/emergent-wisdom/meaning-model) runs in the **same browser viewer included with Meaning Model MCP 0.5.2**. This repository supplies a command-line launcher and run reader. The MCP package owns the interface and its model interpretation; there is no separate copy to fall behind.
 
-For normal modeling, install the MCP in your AI app and ask **“Open this model.”** The assistant returns a local browser link. You do not need this repository. Ask **“Open these models together”** to switch between selected models in one viewer.
+For normal modeling, install the MCP in your AI app and ask **“Open this model.”** While writing, ask **“Keep the viewer following as we work.”** The assistant returns a local browser link. You do not need this repository. Ask **“Open these models together”** to switch between selected models in one viewer.
 
 The tools include no story datasets and do not download them automatically. The public [Twelve Words and Book of Conditions examples](https://github.com/emergent-wisdom/story) are separate, optional downloads. Use `--data <folder>` to open downloaded viewer snapshots.
 
@@ -47,7 +47,9 @@ A run follows `meaning-model-run/1`: `mcp-transcript.jsonl` and its engine datab
 
 The controls, full-document reader, document positions and numerical inspector are the MCP's current implementation. Passage placement follows declared Event links. Graph and Structure retain the native records; Space distinguishes declared positions from qualitative settings. Nothing is placed geographically from word matching.
 
-By default, each link identifies an immutable snapshot. Reopen after model changes to see the new revision. For existing run workflows, `--live` checks the run once a minute. The browser then reloads the current representation when a new revision is available, preserving its URL state and waiting for playback to pause. Live following stays enabled across model switches, including Graph, Structure and Space. This explicit live mode differs from the MCP's immutable snapshot links. Failed refreshes retain the last available view. All links stop working when this launcher stops.
+By default, each MCP link identifies an immutable snapshot. While authoring, `life_model_viewer_open` with `graphHash` and `mode: "live"` follows saved graph revisions and their bound model and prose. It retains the reading context through guarded page refreshes, waits while you interact or play, and pauses at a branch or an inaccessible revision. It does not stream unfinished tokens. Model-only links and the public hosted editions remain snapshots.
+
+For existing run workflows, `--live` checks the run once a minute. The browser then reloads the current representation when a new revision is available, preserving its URL state and waiting for playback to pause. Live following stays enabled across model switches, including Graph, Structure and Space. This standalone run adapter refreshes at a slower interval than the MCP's live graph mode. Failed refreshes retain the last available view. All links stop working when this launcher stops.
 
 Old `/processes.html`, `/landscape.html` and `/explorer.html` links redirect to Processes, Terrain and Graph in the current interface, preserving their query options and selected dataset. This keeps event QR links useful without maintaining old interfaces.
 
@@ -64,7 +66,7 @@ Exports are complete author views, including model definitions, notes and constr
 
 ## Development and releases
 
-Run `npm test` after installing Meaning Model MCP 0.5.0, or set `MEANING_MODEL_DIR` to its checkout. Tests exercise shared data interpretation, exact asset serving, grouped model links, old URLs and read-only serving.
+Run `npm test` after installing Meaning Model MCP 0.5.2, or set `MEANING_MODEL_DIR` to its checkout. Tests exercise shared data interpretation, exact asset serving, grouped model links, old URLs and read-only serving.
 
 This project is distributed through GitHub. Version 0.5.0 switches the launcher and extractor to the bundled MCP viewer, including Graph, Structure and Space. Earlier versions remain available in Git history. UI fixes belong in `meaning-model/mcp-server/viewer/` so MCP users and standalone users receive the same changes.
 
