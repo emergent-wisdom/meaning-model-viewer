@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 const PUBLISH = meaningModelRoot();
 const { buildViewerData } = await loadMeaningModel('src/viewer-data.mjs');
+const { renderViewerDocument } = await loadMeaningModel('src/viewer-snapshot.mjs');
 const meaningModelVersion = JSON.parse(readFileSync(join(PUBLISH, existsSync(join(PUBLISH, 'package.json')) ? 'package.json' : 'mcp-server/package.json'), 'utf8')).version;
 
 const argv = process.argv.slice(2);
@@ -37,7 +38,7 @@ function runFiles(folder) {
 const nameOfRun = (folder) => { const name = basename(folder); return /^(work|novel|run|story|state)$/i.test(name) ? `${basename(dirname(folder))}-${name}` : name; };
 
 // ---- sources -----------------------------------------------------------------------------------------------------
-let calls = []; let history = null; let staticModel = null; let staticGraph = null; let runName = null; let rendered = null; let display = null;
+let calls = []; let history = null; let staticModel = null; let staticGraph = null; let runName = null; let rendered = null; let documentRendered = null; let display = null;
 if (flag('--run')) {
   const run = resolve(flag('--run'));
   const files = runFiles(run);
@@ -76,6 +77,7 @@ if (flag('--run')) {
     history = await exportConstructionHistory(service, { graphHash: head, accessScopes: [...scopes].sort() });
     // The story as a reader has it: the tool's own render of the graph's narrative nodes, in story order.
     rendered = await service.renderNarrativeGraph({ graphHash: head, accessScopes: [...scopes].sort() }).catch((error) => ({ error: String(error?.message ?? error) }));
+    documentRendered = await renderViewerDocument(service, { graphHash: head, accessScopes: [...scopes].sort() }, rendered);
   } finally {
     await service.close?.();
     for (const suffix of ['', '-wal', '-shm']) rmSync(`${snapshot}${suffix}`, { force: true });
@@ -95,7 +97,11 @@ if (flag('--run')) {
 // The MCP owns interpretation, graph construction and every representation.
 // An optional exact render lets static callers retain document ordering.
 if (flag('--render')) rendered = JSON.parse(readFileSync(flag('--render'), 'utf8'));
-const data = await buildViewerData({ history, rendered, calls, name: runName,
+if (flag('--document-render')) documentRendered = JSON.parse(readFileSync(flag('--document-render'), 'utf8'));
+if (documentRendered && rendered && documentRendered.graph_hash !== rendered.graph_hash) {
+  throw new Error('The document render and complete render must belong to the same graph revision.');
+}
+const data = await buildViewerData({ history, rendered, documentRendered, calls, name: runName,
   title: flag('--title'), display, meaningModelVersion });
 mkdirSync(dirname(resolve(out)), { recursive: true });
 writeFileSync(out, JSON.stringify(data));

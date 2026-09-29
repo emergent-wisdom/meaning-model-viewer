@@ -62,6 +62,29 @@ test('shared data builder uses graph-bound model rather than appended author dep
   assert.equal(result.modelHash,'story');assert.equal(result.inspection.model.id,'story');
 });
 
+test('reviewed snapshots group only exact declared author and reader models already loaded', async (t) => {
+  const hash = (n) => String(n).repeat(64);
+  const book = { ...data('A story'), modelHash: hash(1), relatedModels: [
+    { modelHash: hash(2), role: 'author' }, { modelHash: hash(3), role: 'reader' },
+    { modelHash: hash(2), role: 'author' }, { modelHash: hash(4), role: 'author' },
+    { modelHash: hash(1), role: 'author' }, { modelHash: hash(3), role: 'unrecognized' },
+  ] };
+  const author = { ...data('Same display name'), modelHash: hash(2) };
+  const reader = { ...data('Same display name'), modelHash: hash(3) };
+  const base = await listening(t, new Map([['story', book], ['life-a', author], ['life-b', reader]]));
+  const response = await fetch(base);
+  const views = await (await fetch(new URL('data/views.json', response.url))).json();
+  assert.deepEqual(views[0].relatedViews, [
+    { url: views[1].url, role: 'author' }, { url: views[2].url, role: 'reader' },
+  ]);
+  assert.equal(views[1].relatedViews, undefined);
+  assert.equal(views[2].relatedViews, undefined);
+  assert.equal(views.length, 3, 'unloaded references create no extra views');
+  const catalogFromLife = await (await fetch(`${base}${views[1].url}data/views.json`)).json();
+  assert.deepEqual(catalogFromLife.filter((view) => view.selected).map((view) => view.modelHash), [hash(2)]);
+  assert.deepEqual(catalogFromLife[0].relatedViews, views[0].relatedViews);
+});
+
 test('live run refreshes replace displayed data only in explicit live mode',async(t)=>{
   const sets=new Map([['story',data('Before')]]);
   const live=await listening(t,sets,{live:true});

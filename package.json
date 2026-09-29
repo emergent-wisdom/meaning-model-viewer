@@ -1,6 +1,6 @@
 {
   "name": "meaning-model-viewer",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Open saved Meaning Model runs in the same browser viewer bundled with Meaning Model MCP.",
   "keywords": [
     "meaning-model",
@@ -31,7 +31,7 @@
     "node": ">=22.18.0"
   },
   "dependencies": {
-    "@emergent-wisdom/meaning-model-mcp": "0.5.2"
+    "@emergent-wisdom/meaning-model-mcp": "0.6.0"
   },
   "author": "Henrik Westerberg",
   "license": "MIT",

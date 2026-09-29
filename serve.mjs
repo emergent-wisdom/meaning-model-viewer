@@ -51,11 +51,20 @@ export function createViewerServer(sets, { publicDirectory = viewerDirectory(), 
       if (live && relative === 'data/live.json') return send(200, JSON.stringify({ revision: liveRevision(entry.data) }), types['.json']);
       if (live && relative === 'live-reload.js') return send(200, await readFile(new URL('./live-reload.js', import.meta.url)), types['.js']);
       if (relative === 'data/model.json') return send(200, JSON.stringify(entry.data), types['.json']);
-      if (relative === 'data/views.json') return send(200, JSON.stringify(entries.map((item) => ({
-        url: `/${item.token}/`, title: item.data.title ?? item.name,
-        modelHash: item.data.modelHash, graphHash: item.data.headGraphHash,
-        selected: item === entry,
-      }))), types['.json']);
+      if (relative === 'data/views.json') return send(200, JSON.stringify(entries.map((item) => {
+        const relatedViews = [];
+        for (const reference of Array.isArray(item.data.relatedModels) ? item.data.relatedModels : []) {
+          if (!['author', 'reader'].includes(reference?.role) || typeof reference.modelHash !== 'string'
+            || !/^[a-f0-9]{64}$/u.test(reference.modelHash) || reference.modelHash === item.data.modelHash) continue;
+          const related = entries.find((candidate) => candidate.data.modelHash === reference.modelHash);
+          if (!related) continue;
+          const url = `/${related.token}/`;
+          if (!relatedViews.some((view) => view.url === url && view.role === reference.role)) relatedViews.push({ url, role: reference.role });
+        }
+        return { url: `/${item.token}/`, title: item.data.title ?? item.name,
+          modelHash: item.data.modelHash, graphHash: item.data.headGraphHash, selected: item === entry,
+          ...(relatedViews.length ? { relatedViews } : {}) };
+      })), types['.json']);
       const file = resolve(root, relative), type = types[extname(file)];
       if (!file.startsWith(`${root}${sep}`) || !type) return send(404, 'Not found');
       let body = await readFile(file);
