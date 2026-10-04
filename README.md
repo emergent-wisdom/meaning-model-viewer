@@ -2,7 +2,7 @@
 
 [Project website and getting started](https://meaningmodel.ai/) · [Try the hosted viewer](https://meaningmodel.ai/meaning-model/twelve-words/?reading=off)
 
-Open saved [Meaning Model](https://github.com/emergent-wisdom/meaning-model) runs in the **same browser viewer included with Meaning Model MCP 0.6.0**. This repository supplies a command-line launcher and run reader. The MCP package owns the interface and its model interpretation; there is no separate copy to fall behind.
+Open saved [Meaning Model](https://github.com/emergent-wisdom/meaning-model) runs in the **same browser viewer included with Meaning Model MCP 0.6.8**. This repository supplies a command-line launcher and run reader. The MCP package owns the interface and its model interpretation; there is no separate copy to fall behind.
 
 For normal modeling, install the MCP in your AI app and ask **“Open this model.”** While writing, ask **“Keep the viewer following as we work.”** The assistant returns a local browser link. You do not need this repository. Ask **“Open these models together”** to switch between selected models in one viewer.
 
@@ -70,7 +70,7 @@ Exports are complete author views, including model definitions, notes and constr
 
 ## Development and releases
 
-Run `npm test` after installing Meaning Model MCP 0.6.0, or set `MEANING_MODEL_DIR` to its checkout. Tests exercise shared data interpretation, exact asset serving, grouped model links, old URLs and read-only serving.
+Run `npm test` after installing Meaning Model MCP 0.6.8, or set `MEANING_MODEL_DIR` to its checkout. Tests exercise shared data interpretation, exact asset serving, grouped model links, old URLs and read-only serving.
 
 This project is distributed through GitHub. Version 0.5.0 switches the launcher and extractor to the bundled MCP viewer, including Graph, Structure and Space. Earlier versions remain available in Git history. UI fixes belong in `meaning-model/mcp-server/viewer/` so MCP users and standalone users receive the same changes.
 
